@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Installation Script für Network Manager
-# Installiert das Network Manager Script systemweit
+# Installation Script für Smart WiFi Controller
+# Installiert das Smart WiFi Controller Script systemweit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/usr/local/bin"
 DESKTOP_DIR="/usr/share/applications"
-SCRIPT_NAME="network_manager.sh"
-INSTALLED_NAME="network-manager"
+SCRIPT_NAME="smart_wifi_controller.sh"
+INSTALLED_NAME="smart-wifi-controller"
 
 # Colors
 RED='\033[0;31m'
@@ -15,8 +15,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${GREEN}Network Manager Installation${NC}"
-echo "================================"
+echo -e "${GREEN}Smart WiFi Controller Installation${NC}"
+echo "===================================="
 
 # Check if running as root for system installation
 if [ "$EUID" -eq 0 ]; then
@@ -45,19 +45,19 @@ fi
 
 # Create desktop entry
 echo "Erstelle Desktop-Entry..."
-cat > "$DESKTOP_DIR/network-manager.desktop" << EOF
+cat > "$DESKTOP_DIR/smart-wifi-controller.desktop" << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Network Manager
-Name[de]=Netzwerk-Manager
-Comment=Manage WiFi and Ethernet connections automatically
-Comment[de]=WiFi und Ethernet-Verbindungen automatisch verwalten
+Name=Smart WiFi Controller
+Name[de]=Smart WiFi Controller
+Comment=Manage WiFi and Ethernet connections intelligently
+Comment[de]=WiFi und Ethernet-Verbindungen intelligent verwalten
 Exec=$INSTALL_DIR/$INSTALLED_NAME
 Icon=network-wired
 Terminal=false
 Categories=Network;Settings;
-Keywords=network;wifi;ethernet;connection;
+Keywords=network;wifi;ethernet;connection;smart;
 StartupNotify=true
 EOF
 
@@ -122,4 +122,4 @@ if [ "$INSTALL_TYPE" = "user" ]; then
 fi
 
 echo ""
-echo "Das Script kann auch über das Anwendungsmenü gefunden werden (Network Manager)."
+echo "Das Script kann auch über das Anwendungsmenü gefunden werden (Smart WiFi Controller)."

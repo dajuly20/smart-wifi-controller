@@ -1,14 +1,14 @@
-# 🔗 Network Manager - Projekt Übersicht
+# 🔗 Smart WiFi Controller - Projekt Übersicht
 
 ## 🎯 Projektbeschreibung
 
-Ein vollständiges System zur automatischen Verwaltung von WiFi- und Ethernet-Verbindungen unter Linux. Das System erkennt intelligent Netzwerkverbindungen und deaktiviert WiFi automatisch, wenn Ethernet verfügbar ist.
+Ein vollständiges System zur intelligenten Verwaltung von WiFi- und Ethernet-Verbindungen unter Linux. Das System erkennt intelligent Netzwerkverbindungen und deaktiviert WiFi automatisch, wenn Ethernet verfügbar ist.
 
 ## 📁 Dateien-Übersicht
 
 | Datei | Beschreibung | Status |
 |-------|-------------|--------|
-| `network_manager.sh` | 🎯 **Hauptscript** - Kernlogik mit GUI | ✅ Fertig |
+| `smart_wifi_controller.sh` | 🎯 **Hauptscript** - Kernlogik mit GUI | ✅ Fertig |
 | `install.sh` | 📦 **Installer** - System-/Benutzerinstallation | ✅ Fertig |
 | `test.sh` | 🧪 **Test-Suite** - Systemvalidierung | ✅ Fertig |
 | `init.sh` | 🚀 **Initialisierung** - Projekt-Setup | ✅ Fertig |
@@ -40,7 +40,7 @@ sudo ./install.sh
 
 ### 4. Erste Nutzung
 ```bash
-network-manager
+smart-wifi-controller
 ```
 
 ## ⚡ Hauptfunktionen
@@ -79,16 +79,15 @@ network-manager
 
 ### Interaktive Modi
 ```bash
-network-manager              # GUI-Modus (Standard)
-network-manager --status     # Status anzeigen
-network-manager --help       # Hilfe
+smart-wifi-controller              # GUI-Modus (Standard)
+smart-wifi-controller --status     # Status anzeigen
+smart-wifi-controller --help       # Hilfe
 ```
 
 ### Automatisierung
 ```bash
-network-manager --enable-auto   # Automatik AN
-network-manager --disable-auto  # Automatik AUS
-network-manager --daemon        # Daemon-Modus
+smart-wifi-controller --log         # Log-Einträge anzeigen
+smart-wifi-controller --manual      # Einmalige Ausführung
 ```
 
 ### Installation/Test
@@ -166,29 +165,29 @@ Das System ist **produktionsreif** und kann sofort eingesetzt werden!
 ### Logs & Debugging
 ```bash
 # Log-Datei anzeigen
-tail -f /tmp/network_manager.log
+tail -f ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
 
 # Konfiguration prüfen
-cat ~/.config/network_manager_config
+cat ~/.config/smart_wifi_controller_config
 
 # Status diagnostizieren
-network-manager --status
+smart-wifi-controller --status
 ```
 
 ### Konfigurationsdateien
-- **User Config**: `~/.config/network_manager_config`
-- **Autostart**: `~/.config/autostart/network_manager.desktop`
-- **Logs**: `/tmp/network_manager.log`
+- **User Config**: `~/.config/smart_wifi_controller_config`
+- **Autostart**: `~/.config/autostart/smart_wifi_controller.desktop`
+- **Logs**: `~/.local/share/smart_wifi_controller/smart_wifi_controller.log`
 
 ### Deinstallation
 ```bash
 # Systemweit
-sudo rm /usr/local/bin/network-manager
-sudo rm /usr/share/applications/network-manager.desktop
+sudo rm /usr/local/bin/smart-wifi-controller
+sudo rm /usr/share/applications/smart-wifi-controller.desktop
 
 # Benutzerdaten
-rm ~/.config/network_manager_config
-rm ~/.config/autostart/network_manager.desktop
+rm ~/.config/smart_wifi_controller_config
+rm ~/.config/autostart/smart_wifi_controller.desktop
 ```
 
 ## 📈 Zukünftige Erweiterungen

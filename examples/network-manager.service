@@ -1,14 +1,14 @@
+    cat > examples/smart-wifi-controller.service << EOF
 [Unit]
-Description=Network Manager - Automatische WiFi/LAN Verwaltung
-After=NetworkManager.service
-Wants=NetworkManager.service
+Description=Smart WiFi Controller Service
+After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/network-manager --daemon
+User=$USER
+ExecStart=/usr/local/bin/smart-wifi-controller --daemon
 Restart=always
 RestartSec=5
-User=%i
 
 [Install]
 WantedBy=multi-user.target

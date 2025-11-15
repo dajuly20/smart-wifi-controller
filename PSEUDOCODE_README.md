@@ -196,7 +196,7 @@ ERKENNE installationstyp:
 
 ERSTELLE verzeichnisse falls nicht vorhanden
 
-KOPIERE network_manager.sh → install_dir/network-manager
+KOPIERE smart_wifi_controller.sh → install_dir/smart-wifi-controller
 SETZE ausführungsrechte
 
 ERSTELLE desktop_entry:

@@ -16,30 +16,81 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Log file
-LOG_FILE="/tmp/network_manager.log"
+LOG_FILE="$HOME/.local/share/network_manager/network_manager.log"
 
-# Function to log messages
+# Function to ensure log directory exists
+ensure_log_directory() {
+    local log_dir=$(dirname "$LOG_FILE")
+    if [ ! -d "$log_dir" ]; then
+        mkdir -p "$log_dir"
+    fi
+}
+
+# Function to log messages with different levels
 log_message() {
-    local message="$1"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$LOG_FILE"
-    echo -e "${BLUE}[INFO]${NC} $message"
+    local level="${1:-INFO}"
+    local message="$2"
+    
+    # If only one parameter is provided, treat it as INFO level message
+    if [ -z "$message" ]; then
+        message="$level"
+        level="INFO"
+    fi
+    
+    ensure_log_directory
+    
+    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local log_entry="[$timestamp] [$level] $message"
+    
+    # Write to log file
+    echo "$log_entry" >> "$LOG_FILE"
+    
+    # Also display on console with color coding
+    case "$level" in
+        "ERROR")
+            echo -e "${RED}[ERROR]${NC} $message"
+            ;;
+        "WARN")
+            echo -e "${YELLOW}[WARN]${NC} $message"
+            ;;
+        "SUCCESS")
+            echo -e "${GREEN}[SUCCESS]${NC} $message"
+            ;;
+        *)
+            echo -e "${BLUE}[INFO]${NC} $message"
+            ;;
+    esac
 }
 
 # Function to check if required tools are installed
 check_dependencies() {
     local missing_tools=()
     
+    log_message "INFO" "Überprüfe Systemabhängigkeiten..."
+    
     # Check for NetworkManager
     if ! command -v nmcli &> /dev/null; then
         missing_tools+=("NetworkManager (nmcli)")
+        log_message "ERROR" "NetworkManager (nmcli) nicht gefunden"
+    else
+        log_message "INFO" "NetworkManager verfügbar"
     fi
     
     # Check for GUI tools
     if ! command -v zenity &> /dev/null && ! command -v kdialog &> /dev/null; then
         missing_tools+=("zenity oder kdialog")
+        log_message "ERROR" "Kein GUI-Toolkit gefunden (zenity/kdialog)"
+    else
+        if command -v zenity &> /dev/null; then
+            log_message "INFO" "Zenity GUI verfügbar"
+        fi
+        if command -v kdialog &> /dev/null; then
+            log_message "INFO" "KDialog GUI verfügbar"
+        fi
     fi
     
     if [ ${#missing_tools[@]} -ne 0 ]; then
+        log_message "ERROR" "Abhängigkeiten fehlen: ${missing_tools[*]}"
         echo -e "${RED}Fehler: Folgende Tools fehlen:${NC}"
         for tool in "${missing_tools[@]}"; do
             echo "  - $tool"
@@ -51,6 +102,36 @@ check_dependencies() {
         echo "Installation unter Fedora/RHEL:"
         echo "sudo dnf install NetworkManager zenity"
         exit 1
+    fi
+    
+    log_message "SUCCESS" "Alle Abhängigkeiten erfüllt"
+}
+
+# Function to get the last N log entries
+get_recent_logs() {
+    local num_entries="${1:-15}"
+    
+    if [ -f "$LOG_FILE" ]; then
+        tail -n "$num_entries" "$LOG_FILE"
+    else
+        echo "Keine Log-Einträge vorhanden."
+    fi
+}
+
+# Function to show log entries in GUI
+show_log_gui() {
+    local recent_logs=$(get_recent_logs 15)
+    local gui_cmd=$(get_gui_command)
+    
+    if [ "$gui_cmd" = "zenity" ]; then
+        echo "$recent_logs" | zenity --text-info \
+            --title="Network Manager - Log-Einträge (letzte 15)" \
+            --width=800 --height=500 \
+            --font="Monospace 10"
+    else
+        # KDialog fallback
+        kdialog --textbox <(echo "$recent_logs") 800 500 \
+            --title "Network Manager - Log-Einträge (letzte 15)"
     fi
 }
 
@@ -125,25 +206,26 @@ toggle_wifi() {
     local action="$1" # on or off
     
     if [ "$action" = "on" ]; then
-        log_message "Aktiviere WiFi..."
-        nmcli radio wifi on
-        if [ $? -eq 0 ]; then
-            log_message "WiFi erfolgreich aktiviert"
+        log_message "INFO" "Versuche WiFi zu aktivieren..."
+        if nmcli radio wifi on 2>/dev/null; then
+            log_message "SUCCESS" "WiFi erfolgreich aktiviert"
             return 0
         else
-            log_message "Fehler beim Aktivieren von WiFi"
+            log_message "ERROR" "Fehler beim Aktivieren von WiFi"
             return 1
         fi
     elif [ "$action" = "off" ]; then
-        log_message "Deaktiviere WiFi..."
-        nmcli radio wifi off
-        if [ $? -eq 0 ]; then
-            log_message "WiFi erfolgreich deaktiviert"
+        log_message "INFO" "Versuche WiFi zu deaktivieren..."
+        if nmcli radio wifi off 2>/dev/null; then
+            log_message "SUCCESS" "WiFi erfolgreich deaktiviert"
             return 0
         else
-            log_message "Fehler beim Deaktivieren von WiFi"
+            log_message "ERROR" "Fehler beim Deaktivieren von WiFi"
             return 1
         fi
+    else
+        log_message "ERROR" "Ungültiger Parameter für toggle_wifi: $action"
+        return 1
     fi
 }
 
@@ -153,30 +235,36 @@ manage_connections() {
     local wifi_status=$(get_wifi_status)
     local action_taken=""
     
-    log_message "Ethernet Status: $eth_status"
-    log_message "WiFi Status: $wifi_status"
+    log_message "INFO" "=== Netzwerk-Check gestartet ==="
+    log_message "INFO" "Ethernet Status: $eth_status"
+    log_message "INFO" "WiFi Status: $wifi_status"
     
     if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "enabled" ]; then
         # Ethernet connected and WiFi enabled -> disable WiFi
-        log_message "Ethernet verbunden und WiFi aktiv - deaktiviere WiFi"
+        log_message "INFO" "Ethernet verbunden und WiFi aktiv - deaktiviere WiFi"
         if toggle_wifi "off"; then
             action_taken="WiFi wurde deaktiviert (Ethernet-Verbindung erkannt)"
+            log_message "SUCCESS" "$action_taken"
         else
             action_taken="Fehler beim Deaktivieren von WiFi"
+            log_message "ERROR" "$action_taken"
         fi
     elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "disabled" ]; then
         # Ethernet disconnected and WiFi disabled -> enable WiFi
-        log_message "Ethernet getrennt und WiFi inaktiv - aktiviere WiFi"
+        log_message "INFO" "Ethernet getrennt und WiFi inaktiv - aktiviere WiFi"
         if toggle_wifi "on"; then
             action_taken="WiFi wurde aktiviert (keine Ethernet-Verbindung)"
+            log_message "SUCCESS" "$action_taken"
         else
             action_taken="Fehler beim Aktivieren von WiFi"
+            log_message "ERROR" "$action_taken"
         fi
     else
-        log_message "Keine Aktion erforderlich"
+        log_message "INFO" "Keine Aktion erforderlich"
         action_taken="Keine Änderung erforderlich (Ethernet: $eth_status, WiFi: $wifi_status)"
     fi
     
+    log_message "INFO" "=== Netzwerk-Check beendet ==="
     echo "$action_taken"
 }
 
@@ -198,6 +286,8 @@ show_gui() {
     local eth_status=$(get_ethernet_status)
     local wifi_status=$(get_wifi_status)
     
+    log_message "INFO" "GUI gestartet - Ethernet: $eth_status, WiFi: $wifi_status"
+    
     local action_text=""
     local question=""
     
@@ -212,29 +302,66 @@ Möchten Sie WiFi deaktivieren?"
 Möchten Sie WiFi aktivieren?"
         action_text="WiFi aktivieren"
     else
-        show_message "Netzwerk-Manager" "Keine Aktion erforderlich.
+        # Show status with log option
+        local status_text="Keine Aktion erforderlich.
 
 Ethernet: $eth_status
-WiFi: $wifi_status" "info"
+WiFi: $wifi_status
+
+Möchten Sie die letzten Log-Einträge anzeigen?"
+        
+        local gui_cmd=$(get_gui_command)
+        if [ "$gui_cmd" = "zenity" ]; then
+            if zenity --question \
+                --title="Netzwerk-Manager" \
+                --text="$status_text" \
+                --ok-label="Log anzeigen" \
+                --cancel-label="Schließen" \
+                --width=400 --height=200; then
+                show_log_gui
+            fi
+        else
+            if kdialog --yesno "$status_text" --title "Netzwerk-Manager" \
+                --yes-label "Log anzeigen" --no-label "Schließen"; then
+                show_log_gui
+            fi
+        fi
         return 0
     fi
     
-    # Show simple GUI question (no automation checkbox)
+    # Show GUI question with additional log option
     local gui_cmd=$(get_gui_command)
     local user_choice=""
     
     if [ "$gui_cmd" = "zenity" ]; then
-        # Use simple zenity question dialog
-        if zenity --question \
+        # Create a custom dialog with multiple buttons
+        zenity --question \
             --title="Netzwerk-Manager" \
             --text="$question" \
-            --width=400 --height=150; then
-            user_choice="Ja"
-        else
-            user_choice="Nein"
-        fi
+            --width=450 --height=200 \
+            --extra-button="Log anzeigen" \
+            --ok-label="Ja" \
+            --cancel-label="Nein"
+        
+        local result=$?
+        case $result in
+            0) user_choice="Ja" ;;
+            1) user_choice="Nein" ;;
+            *) 
+                show_log_gui
+                # Ask again after showing log
+                if zenity --question \
+                    --title="Netzwerk-Manager" \
+                    --text="$question" \
+                    --width=400 --height=150; then
+                    user_choice="Ja"
+                else
+                    user_choice="Nein"
+                fi
+                ;;
+        esac
     else
-        # KDialog fallback
+        # KDialog fallback - simpler approach
         if kdialog --yesno "$question" --title "Netzwerk-Manager"; then
             user_choice="Ja"
         else
@@ -245,17 +372,50 @@ WiFi: $wifi_status" "info"
     # Process user choice
     if [ "$user_choice" = "Ja" ]; then
         local result=$(manage_connections)
-        show_message "Netzwerk-Manager" "Aktion ausgeführt: $result" "info"
+        
+        # Show result with option to view logs
+        if [ "$gui_cmd" = "zenity" ]; then
+            zenity --info \
+                --title="Netzwerk-Manager" \
+                --text="Aktion ausgeführt: $result
+
+Möchten Sie die Log-Einträge anzeigen?" \
+                --width=450 \
+                --extra-button="Log anzeigen"
+            
+            if [ $? -ne 0 ]; then
+                show_log_gui
+            fi
+        else
+            kdialog --msgbox "Aktion ausgeführt: $result" --title "Netzwerk-Manager"
+        fi
+        
+        log_message "INFO" "Benutzeraktion abgeschlossen"
     else
+        log_message "INFO" "Benutzer hat Aktion abgebrochen"
         show_message "Netzwerk-Manager" "Aktion abgebrochen." "info"
     fi
 }
 
 # Main script logic
 main() {
+    # Log script startup
+    log_message "INFO" "======================================"
+    log_message "INFO" "Network Manager Script gestartet"
+    log_message "INFO" "Parameter: ${*:-'(keine)'}"
+    log_message "INFO" "======================================"
+    
     case "${1:-}" in
         --status)
             show_status
+            ;;
+        --log|--logs)
+            if command -v zenity &> /dev/null || command -v kdialog &> /dev/null; then
+                show_log_gui
+            else
+                echo "=== Network Manager Log (letzte 15 Einträge) ==="
+                get_recent_logs 15
+            fi
             ;;
         --manual)
             local result=$(manage_connections)
@@ -268,16 +428,20 @@ Network Manager Script - Einmalige WiFi/Ethernet Verwaltung
 Verwendung:
   $0                 Interaktive GUI (Standard)
   $0 --status        Aktuellen Status anzeigen
+  $0 --log           Log-Einträge anzeigen (letzte 15)
   $0 --manual        Einmalige manuelle Ausführung (ohne GUI)
   $0 --help          Diese Hilfe anzeigen
 
 Das Script überprüft einmalig die Netzwerkverbindungen und bietet
 an, WiFi zu deaktivieren (bei Ethernet) oder zu aktivieren (ohne Ethernet).
+
+Log-Datei: $LOG_FILE
 EOF
             ;;
         *)
             # Default: Show interactive GUI
             check_dependencies
+            log_message "INFO" "Network Manager gestartet (GUI-Modus)"
             show_gui
             ;;
     esac

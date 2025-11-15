@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Test Script für Network Manager
+# Test Script für Smart WiFi Controller
 # Überprüft die Grundfunktionen ohne tatsächliche Netzwerkänderungen
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NETWORK_MANAGER="$SCRIPT_DIR/network_manager.sh"
+SMART_WIFI_CONTROLLER="$SCRIPT_DIR/smart_wifi_controller.sh"
 
 # Colors
 RED='\033[0;31m'
@@ -13,17 +13,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}Network Manager Test Suite${NC}"
-echo "=========================="
+echo -e "${BLUE}Smart WiFi Controller Test Suite${NC}"
+echo "=================================="
 
-# Check if network_manager.sh exists
-if [ ! -f "$NETWORK_MANAGER" ]; then
-    echo -e "${RED}✗ network_manager.sh nicht gefunden!${NC}"
+# Check if smart_wifi_controller.sh exists
+if [ ! -f "$SMART_WIFI_CONTROLLER" ]; then
+    echo -e "${RED}✗ smart_wifi_controller.sh nicht gefunden!${NC}"
     exit 1
 fi
 
 # Make executable
-chmod +x "$NETWORK_MANAGER"
+chmod +x "$SMART_WIFI_CONTROLLER"
 
 echo -e "${GREEN}✓ Script gefunden und ausführbar gemacht${NC}"
 
@@ -51,7 +51,7 @@ fi
 # Test 2: Help function
 echo ""
 echo -e "${YELLOW}Test 2: Hilfe-Funktion${NC}"
-if "$NETWORK_MANAGER" --help &> /dev/null; then
+if "$SMART_WIFI_CONTROLLER" --help &> /dev/null; then
     echo -e "${GREEN}✓ Hilfe-Funktion funktioniert${NC}"
 else
     echo -e "${RED}✗ Hilfe-Funktion fehlgeschlagen${NC}"
@@ -61,7 +61,7 @@ fi
 echo ""
 echo -e "${YELLOW}Test 3: Status-Funktion${NC}"
 if command -v nmcli &> /dev/null; then
-    if "$NETWORK_MANAGER" --status &> /dev/null; then
+    if "$SMART_WIFI_CONTROLLER" --status &> /dev/null; then
         echo -e "${GREEN}✓ Status-Funktion funktioniert${NC}"
     else
         echo -e "${RED}✗ Status-Funktion fehlgeschlagen${NC}"
@@ -90,20 +90,13 @@ fi
 echo ""
 echo -e "${YELLOW}Test 5: Konfigurationsdateien${NC}"
 
-CONFIG_FILE="$HOME/.config/network_manager_config"
+CONFIG_FILE="$HOME/.config/smart_wifi_controller_config"
 if [ -f "$CONFIG_FILE" ]; then
     echo -e "${GREEN}✓ Konfigurationsdatei existiert: $CONFIG_FILE${NC}"
     echo "Inhalt:"
     cat "$CONFIG_FILE" | sed 's/^/  /'
 else
     echo -e "${YELLOW}⚠ Konfigurationsdatei existiert noch nicht: $CONFIG_FILE${NC}"
-fi
-
-AUTOSTART_FILE="$HOME/.config/autostart/network_manager.desktop"
-if [ -f "$AUTOSTART_FILE" ]; then
-    echo -e "${GREEN}✓ Autostart-Datei existiert: $AUTOSTART_FILE${NC}"
-else
-    echo -e "${YELLOW}⚠ Autostart-Datei existiert noch nicht: $AUTOSTART_FILE${NC}"
 fi
 
 # Test 6: Dry run simulation
@@ -136,7 +129,7 @@ if command -v nmcli &> /dev/null && [ "$GUI_AVAILABLE" != "none" ]; then
     echo ""
     echo "Nächste Schritte:"
     echo "1. Installation: ./install.sh"
-    echo "2. Erste Ausführung: ./network_manager.sh"
+    echo "2. Erste Ausführung: ./smart_wifi_controller.sh"
 elif command -v nmcli &> /dev/null; then
     echo -e "${YELLOW}⚠ NetworkManager verfügbar, aber kein GUI-Toolkit${NC}"
     echo ""

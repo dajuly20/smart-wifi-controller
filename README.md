@@ -1,4 +1,4 @@
-# Network Manager Script
+# Smart WiFi Controller Script
 
 Ein intelligentes Bash-Script zur automatischen Verwaltung von WiFi- und Ethernet-Verbindungen mit grafischer Benutzeroberfläche.
 
@@ -40,8 +40,8 @@ sudo ./install.sh
 
 ```bash
 # Script kopieren
-sudo cp network_manager.sh /usr/local/bin/network-manager
-sudo chmod +x /usr/local/bin/network-manager
+sudo cp smart_wifi_controller.sh /usr/local/bin/smart-wifi-controller
+sudo chmod +x /usr/local/bin/smart-wifi-controller
 
 # Abhängigkeiten installieren (Ubuntu/Debian)
 sudo apt update && sudo apt install network-manager zenity
@@ -55,7 +55,7 @@ sudo dnf install NetworkManager zenity
 ### Interaktive GUI (Standard)
 
 ```bash
-network-manager
+smart-wifi-controller
 ```
 
 Startet das Script mit grafischer Benutzeroberfläche. Das Script erkennt automatisch den Netzwerkstatus und bietet entsprechende Aktionen an:
@@ -68,59 +68,53 @@ Startet das Script mit grafischer Benutzeroberfläche. Das Script erkennt automa
 
 ```bash
 # Aktuellen Netzwerkstatus anzeigen
-network-manager --status
+smart-wifi-controller --status
 
 # Einmalige manuelle Ausführung (ohne GUI)
-network-manager --manual
+smart-wifi-controller --manual
 
-# Automatisierung aktivieren
-network-manager --enable-auto
-
-# Automatisierung deaktivieren
-network-manager --disable-auto
-
-# Daemon-Modus (Hintergrundausführung)
-network-manager --daemon
+# Log-Einträge anzeigen
+smart-wifi-controller --log
 
 # Hilfe anzeigen
-network-manager --help
+smart-wifi-controller --help
 ```
 
 ## Automatisierung
 
-### Aktivierung
+**Hinweis**: Die aktuelle Version läuft im "Single-Run-Modus" und bietet keine Hintergrund-Automatisierung. Jede Ausführung überprüft einmalig den Netzwerkstatus und führt bei Bedarf eine Aktion aus.
 
-Wenn Sie die Checkbox "Immer automatisch ausführen" aktivieren, passiert folgendes:
+### Log-Tracking
 
-1. **Konfiguration wird gespeichert** in `~/.config/network_manager_config`
-2. **Autostart-Eintrag wird erstellt** in `~/.config/autostart/network_manager.desktop`
-3. **Daemon startet** beim nächsten Login automatisch
+Das Script protokolliert alle Aktionen in der Datei:
+- **Log-Datei**: `~/.local/share/smart_wifi_controller/smart_wifi_controller.log`
+- **Konfiguration**: `~/.config/smart_wifi_controller_config`
 
-### Deaktivierung
+### Manuelle Wiederholung
 
 ```bash
-network-manager --disable-auto
-```
+# Einmalige Ausführung
+smart-wifi-controller
 
-Oder manuell:
-- Autostart-Datei löschen: `~/.config/autostart/network_manager.desktop`
-- Konfigurationsdatei bearbeiten: `~/.config/network_manager_config`
+# Log-Einträge anzeigen
+smart-wifi-controller --log
+```
 
 ## Konfiguration
 
 ### Konfigurationsdatei
 
-Speicherort: `~/.config/network_manager_config`
+Speicherort: `~/.config/smart_wifi_controller_config`
 
 ```bash
-# Network Manager Configuration
+# Smart WiFi Controller Configuration
 AUTO_MANAGE="true"
 LAST_UPDATE="2024-11-15 14:30:22"
 ```
 
 ### Log-Datei
 
-Speicherort: `/tmp/network_manager.log`
+Speicherort: `~/.local/share/smart_wifi_controller/smart_wifi_controller.log`
 
 Enthält detaillierte Informationen über:
 - Erkannte Netzwerkverbindungen
@@ -181,18 +175,154 @@ Sonst:
    - Stellen Sie sicher, dass Ihr Benutzer in der Gruppe `netdev` oder `network` ist
    - Oder führen Sie das Script mit `sudo` aus
 
-4. **Autostart funktioniert nicht**
-   - Überprüfen Sie: `ls ~/.config/autostart/network_manager.desktop`
-   - Desktop-Umgebung unterstützt möglicherweise keine Autostart-Einträge
+4. **Log-Dateien überprüfen**
+   - Überprüfen Sie: `ls ~/.local/share/smart_wifi_controller/`
+   - Log-Inhalt: `smart-wifi-controller --log`
+
+## 📝 Logging-System
+
+### Wo wird geloggt?
+
+**Standard Log-Verzeichnis:**
+```bash
+~/.local/share/smart_wifi_controller/
+├── smart_wifi_controller.log    # Hauptlog-Datei
+└── smart_wifi_controller.log.1  # Rotierte Log-Datei (falls vorhanden)
+```
+
+**Vollständiger Pfad:**
+```bash
+# Beispiel für Benutzer "julian"
+/home/julian/.local/share/smart_wifi_controller/smart_wifi_controller.log
+```
+
+### Log-Level und -Format
+
+Das Script protokolliert verschiedene Ereignisse mit verschiedenen Log-Leveln:
+
+```
+[2025-11-15 14:30:15] [INFO] Script gestartet im GUI-Modus
+[2025-11-15 14:30:16] [INFO] Ethernet Status: disconnected
+[2025-11-15 14:30:16] [INFO] WiFi Status: disabled
+[2025-11-15 14:30:17] [SUCCESS] WiFi erfolgreich aktiviert
+[2025-11-15 14:30:18] [WARN] Keine Aktion erforderlich
+[2025-11-15 14:30:19] [ERROR] NetworkManager nicht verfügbar
+```
+
+**Log-Level Erklärung:**
+- `INFO`: Allgemeine Informationen über Script-Aktionen
+- `SUCCESS`: Erfolgreich durchgeführte Netzwerkänderungen  
+- `WARN`: Warnungen oder unerwartete Situationen
+- `ERROR`: Fehler bei der Ausführung
+
+### Log-Rotation
+
+- **Maximale Dateigröße:** 1MB pro Log-Datei
+- **Anzahl Archive:** 3 rotierte Dateien werden behalten
+- **Rotation erfolgt:** Automatisch bei Script-Start wenn Grenze erreicht
+
+### Log-Ausgabe anzeigen
+
+**In der GUI:**
+```bash
+smart-wifi-controller --log
+```
+
+**In der Konsole:**
+```bash
+# Vollständiges Log anzeigen
+cat ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Live-Monitor (folgt neuen Einträgen)
+tail -f ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Nur die letzten 20 Zeilen
+tail -20 ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Nach Fehlern suchen
+grep ERROR ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Nach erfolgreichen Aktionen suchen
+grep SUCCESS ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+```
+
+### Log-Inhalte
+
+**Typische Log-Einträge:**
+
+1. **Script-Start:**
+   ```
+   [2025-11-15 14:30:15] [INFO] Script gestartet im GUI-Modus
+   [2025-11-15 14:30:15] [INFO] Zenity GUI verfügbar
+   ```
+
+2. **Netzwerk-Checks:**
+   ```
+   [2025-11-15 14:30:16] [INFO] Ethernet Status: connected (Device: eth0)
+   [2025-11-15 14:30:16] [INFO] WiFi Status: enabled (Device: wlan0)
+   ```
+
+3. **Benutzer-Aktionen:**
+   ```
+   [2025-11-15 14:30:17] [INFO] Benutzer hat WiFi-Deaktivierung bestätigt
+   [2025-11-15 14:30:17] [SUCCESS] WiFi erfolgreich deaktiviert (Ethernet erkannt)
+   ```
+
+4. **Fehler-Protokollierung:**
+   ```
+   [2025-11-15 14:30:18] [ERROR] Fehler beim Deaktivieren von WiFi: Device not found
+   [2025-11-15 14:30:19] [ERROR] nmcli Befehl fehlgeschlagen mit Exit-Code 1
+   ```
+
+### Log-Konfiguration
+
+**Standardeinstellungen (nicht änderbar im Single-Run-Modus):**
+- **Dateiname:** `smart_wifi_controller.log`
+- **Zeitformat:** `YYYY-MM-DD HH:MM:SS`
+- **Encoding:** UTF-8
+- **Berechtigungen:** 644 (nur Owner kann schreiben)
+
+### Troubleshooting mit Logs
+
+**Häufige Log-Analysen:**
+
+```bash
+# Letzte Fehler finden
+grep -n ERROR ~/.local/share/smart_wifi_controller/smart_wifi_controller.log | tail -5
+
+# Aktionen der letzten Stunde
+grep "$(date +'%Y-%m-%d %H')" ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Alle WiFi-Aktionen anzeigen
+grep -E "(aktiviert|deaktiviert)" ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Script-Starts zählen
+grep "Script gestartet" ~/.local/share/smart_wifi_controller/smart_wifi_controller.log | wc -l
+```
+
+## 📋 Log-Schnellreferenz
+
+| **Befehl** | **Beschreibung** |
+|-----------|------------------|
+| `smart-wifi-controller --log` | Log in GUI anzeigen |
+| `tail -f ~/.local/share/smart_wifi_controller/smart_wifi_controller.log` | Live-Log verfolgen |
+| `grep ERROR ~/.local/share/smart_wifi_controller/smart_wifi_controller.log` | Nur Fehler anzeigen |
+| `grep SUCCESS ~/.local/share/smart_wifi_controller/smart_wifi_controller.log` | Erfolgreiche Aktionen |
+| `tail -20 ~/.local/share/smart_wifi_controller/smart_wifi_controller.log` | Letzte 20 Zeilen |
+
+**Log-Datei Pfad:** `~/.local/share/smart_wifi_controller/smart_wifi_controller.log`
 
 ### Debug-Modus
 
 ```bash
 # Manuellen Modus mit Ausgabe testen
-network-manager --manual
+smart-wifi-controller --manual
 
 # Log-Datei überwachen
-tail -f /tmp/network_manager.log
+tail -f ~/.local/share/smart_wifi_controller/smart_wifi_controller.log
+
+# Log-Einträge in GUI anzeigen
+smart-wifi-controller --log
 
 # Netzwerkstatus direkt überprüfen
 nmcli connection show --active
@@ -227,12 +357,12 @@ nmcli radio wifi
 
 ```bash
 # Systemweite Installation
-sudo rm /usr/local/bin/network-manager
-sudo rm /usr/share/applications/network-manager.desktop
+sudo rm /usr/local/bin/smart-wifi-controller
+sudo rm /usr/share/applications/smart-wifi-controller.desktop
 
-# Lokale Installation
-rm ~/.local/bin/network-manager
-rm ~/.local/share/applications/network-manager.desktop
+# Bei lokaler Installation:
+rm ~/.local/bin/smart-wifi-controller
+rm ~/.local/share/applications/smart-wifi-controller.desktop
 
 # Konfiguration und Autostart entfernen
 rm ~/.config/network_manager_config
@@ -242,6 +372,42 @@ rm ~/.config/autostart/network_manager.desktop
 ## Lizenz
 
 Dieses Script steht unter der MIT-Lizenz und kann frei verwendet und modifiziert werden.
+
+## Zukünftige Erweiterungen
+
+### 🔍 **Priorität 1: Intelligente Netzwerk-Erkennung**
+- [ ] **Subnet-Erkennung**: Automatische Erkennung ob LAN und WLAN im gleichen Netzwerk/Subnet sind
+- [ ] **Sonderfall-Behandlung**: Wenn unterschiedliche Netzwerke erkannt werden → Benutzer fragen oder konfigurierbare Regel anwenden
+- [ ] **Bridge-Erkennung**: Erkennung von Netzwerk-Bridges und entsprechende intelligente Behandlung
+- [ ] **Gateway-Analyse**: Überprüfung ob beide Verbindungen zum selben Gateway/Router führen
+- [ ] **IP-Range-Vergleich**: Vergleich der IP-Adressbereiche von Ethernet und WiFi
+
+### 🌐 **Erweiterte Netzwerk-Features**
+- [ ] **Netzwerkprofile**: Profile für verschiedene Umgebungen (Arbeit, Zuhause, öffentlich)
+- [ ] **VPN-Integration**: Berücksichtigung von VPN-Verbindungen bei Entscheidungen
+- [ ] **Mobile Hotspot**: Management von Smartphone-Hotspots
+- [ ] **Zeitbasierte Regeln**: Automatische Umschaltung basierend auf Tageszeit
+- [ ] **Bandbreiten-Monitoring**: Bevorzugung der schnelleren Verbindung
+
+### 🔧 **Technische Verbesserungen**
+- [ ] **Konfiguration-GUI**: Grafische Konfigurationsoberfläche
+- [ ] **System-Tray**: Integration in die Systemleiste
+- [ ] **DBus-Integration**: Bessere Desktop-Integration
+- [ ] **Mehrere Netzwerk-Interfaces**: Support für mehrere Ethernet/WiFi-Adapter
+- [ ] **Notification-System**: Erweiterte Benachrichtigungen über Netzwerkänderungen
+
+### 📦 **Packaging & Distribution**
+- [ ] **Debian Package**: .deb-Paket für Ubuntu/Debian
+- [ ] **RPM Package**: .rpm-Paket für Fedora/RHEL
+- [ ] **AUR Package**: Arch Linux User Repository
+- [ ] **Snap Package**: Universelles Snap-Paket
+- [ ] **Flatpak**: Flatpak-Distribution
+
+### 💡 **Spezielle Anwendungsfälle**
+- [ ] **Enterprise-Mode**: Erweiterte Funktionen für Unternehmen
+- [ ] **Roaming-Support**: Intelligente Behandlung bei WiFi-Roaming
+- [ ] **Mesh-Netzwerk**: Support für Mesh-WiFi-Systeme
+- [ ] **Load-Balancing**: Gleichzeitige Nutzung mehrerer Verbindungen
 
 ## Support
 

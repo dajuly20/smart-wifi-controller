@@ -208,23 +208,23 @@ EOF
     echo -e "${GREEN}✓${NC} Beispiel-Konfiguration erstellt: config/example_config.conf"
     
     # Systemd-Service Beispiel
-    cat > examples/network-manager.service << EOF
+    cat > examples/smart-wifi-controller.service << EOF
 [Unit]
-Description=Network Manager - Automatische WiFi/LAN Verwaltung
-After=NetworkManager.service
-Wants=NetworkManager.service
+Description=Smart WiFi Controller Service
+After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/network-manager --daemon
+User=\$USER
+ExecStart=/usr/local/bin/smart-wifi-controller --daemon
 Restart=always
 RestartSec=5
-User=%i
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    echo -e "${GREEN}✓${NC} Systemd-Service Beispiel erstellt: examples/network-manager.service"
+
+    echo -e "${GREEN}✓${NC} Systemd-Service Beispiel erstellt: examples/smart-wifi-controller.service"
 }
 
 # Alle Scripts ausführbar machen
@@ -264,6 +264,7 @@ check_dependencies() {
     
     local missing=()
     local gui_available=false
+    local need_install=false
     
     # Kern-Abhängigkeiten prüfen
     for dep in "${deps[@]}"; do
@@ -274,7 +275,8 @@ check_dependencies() {
             echo -e "${GREEN}✓${NC} $name verfügbar"
         else
             echo -e "${RED}✗${NC} $name fehlt"
-            missing+=("$name")
+            missing+=("$cmd")
+            need_install=true
         fi
     done
     
@@ -291,27 +293,116 @@ check_dependencies() {
     
     if [ "$gui_available" = false ]; then
         echo -e "${YELLOW}⚠${NC} Kein GUI-Toolkit gefunden (zenity oder kdialog empfohlen)"
-        missing+=("GUI-Toolkit (zenity empfohlen)")
+        missing+=("zenity")
+        need_install=true
     fi
     
-    if [ ${#missing[@]} -gt 0 ]; then
+    # Automatische Installation anbieten
+    if [ "$need_install" = true ]; then
         echo ""
         echo -e "${RED}Fehlende Abhängigkeiten:${NC}"
         for dep in "${missing[@]}"; do
             echo -e "  ${RED}•${NC} $dep"
         done
         echo ""
-        echo -e "${BLUE}Installation unter Ubuntu/Debian:${NC}"
-        echo "sudo apt update && sudo apt install network-manager zenity"
+        
+        # Betriebssystem erkennen
+        local os_info=""
+        local install_cmd=""
+        
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            case "$ID" in
+                ubuntu|debian|pop|linuxmint)
+                    os_info="Ubuntu/Debian-basiert"
+                    install_cmd="sudo apt update && sudo apt install -y network-manager zenity"
+                    ;;
+                fedora|rhel|centos|rocky|almalinux)
+                    os_info="Fedora/RHEL-basiert"
+                    install_cmd="sudo dnf install -y NetworkManager zenity"
+                    ;;
+                opensuse*|sles)
+                    os_info="openSUSE"
+                    install_cmd="sudo zypper install -y NetworkManager zenity"
+                    ;;
+                arch|manjaro|endeavouros)
+                    os_info="Arch-basiert"
+                    install_cmd="sudo pacman -S --needed networkmanager zenity"
+                    ;;
+                *)
+                    os_info="Unbekannt"
+                    ;;
+            esac
+        fi
+        
+        echo -e "${BLUE}Erkanntes System:${NC} $os_info"
         echo ""
-        echo -e "${BLUE}Installation unter Fedora/RHEL:${NC}"
-        echo "sudo dnf install NetworkManager zenity"
-        echo ""
-        return 1
+        
+        if [ -n "$install_cmd" ]; then
+            echo -e "${YELLOW}Soll ich die fehlenden Pakete automatisch installieren?${NC}"
+            echo -e "${CYAN}Kommando:${NC} $install_cmd"
+            echo ""
+            read -p "Automatisch installieren? (y/N): " -n 1 -r
+            echo
+            
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${BLUE}Installiere Abhängigkeiten...${NC}"
+                
+                if eval "$install_cmd"; then
+                    echo -e "${GREEN}✓${NC} Installation erfolgreich!"
+                     echo ""
+                    
+                    # Erneute Prüfung
+                    echo -e "${BLUE}Führe erneute Überprüfung durch...${NC}"
+                    check_dependencies_simple
+                else
+                    echo -e "${RED}✗${NC} Installation fehlgeschlagen!"
+                    echo ""
+                    echo "Bitte installieren Sie die Pakete manuell:"
+                    echo "$install_cmd"
+                    return 1
+                fi
+            else
+                echo -e "${YELLOW}⚠${NC} Installation übersprungen."
+                echo ""
+                echo "Manuelle Installation erforderlich:"
+                echo "$install_cmd"
+                return 1
+            fi
+        else
+            echo "Bitte installieren Sie die fehlenden Pakete manuell für Ihr System."
+            return 1
+        fi
+    else
+        echo -e "${GREEN}✓${NC} Alle Abhängigkeiten erfüllt"
     fi
     
-    echo -e "${GREEN}✓${NC} Alle Abhängigkeiten erfüllt"
     return 0
+}
+
+# Vereinfachte Abhängigkeitsprüfung (ohne Installation)
+check_dependencies_simple() {
+    local all_ok=true
+    
+    if ! command -v nmcli &> /dev/null; then
+        echo -e "${RED}✗${NC} NetworkManager noch nicht verfügbar"
+        all_ok=false
+    else
+        echo -e "${GREEN}✓${NC} NetworkManager verfügbar"
+    fi
+    
+    if ! command -v zenity &> /dev/null && ! command -v kdialog &> /dev/null; then
+        echo -e "${RED}✗${NC} GUI-Toolkit noch nicht verfügbar"
+        all_ok=false
+    else
+        echo -e "${GREEN}✓${NC} GUI-Toolkit verfügbar"
+    fi
+    
+    if [ "$all_ok" = true ]; then
+        echo -e "${GREEN}✓${NC} Alle Abhängigkeiten sind jetzt verfügbar!"
+    else
+        echo -e "${YELLOW}⚠${NC} Einige Abhängigkeiten fehlen noch."
+    fi
 }
 
 # Git-Repository initialisieren (falls gewünscht)
