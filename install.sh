@@ -232,17 +232,30 @@ if [ "$INSTALL_TYPE" = "service_install" ]; then
             echo "Status-Informationen:"
             systemctl status smart-wifi-controller
             echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Letzte 50 Log-Zeilen:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            journalctl -u smart-wifi-controller -n 50 --no-pager
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
             read -p "Erneut versuchen? (j/n): " retry_choice
 
             if [[ "$retry_choice" =~ ^[Jj] ]]; then
                 echo "Starte Dienst erneut..."
                 systemctl restart smart-wifi-controller
+                sleep 2
 
                 if systemctl is-active --quiet smart-wifi-controller; then
                     echo -e "${GREEN}✓${NC} Dienst erfolgreich gestartet"
                 else
                     echo -e "${RED}✗${NC} Dienst konnte immer noch nicht gestartet werden"
-                    echo "Bitte überprüfen Sie die Logs mit: journalctl -u smart-wifi-controller -n 50"
+                    echo ""
+                    echo "Aktuelle Logs:"
+                    journalctl -u smart-wifi-controller -n 20 --no-pager
+                    echo ""
+                    echo "Weitere Informationen:"
+                    echo "  systemctl status smart-wifi-controller"
+                    echo "  journalctl -u smart-wifi-controller -f   (Live-Logs)"
                 fi
             else
                 echo "Service-Datei wurde installiert, aber nicht gestartet."
