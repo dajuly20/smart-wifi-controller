@@ -40,12 +40,6 @@ import signal
 import subprocess
 import psutil
 
-# Self-elevate if not running with sudo
-if os.geteuid() != 0:
-    # Re-run script with sudo
-    args = ['sudo', sys.executable] + sys.argv
-    os.execlp('sudo', 'sudo', sys.executable, *sys.argv)
-
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
@@ -245,13 +239,13 @@ class SmartWiFiIndicator:
             dialog.destroy()
 
     def toggle_wifi_quick(self, widget):
-        """Quick toggle WiFi on/off"""
+        """Quick toggle WiFi on/off (with passwordless sudo)"""
         try:
             current_status = self.get_wifi_status()
             if current_status == "AN":
-                subprocess.run(["nmcli", "radio", "wifi", "off"], timeout=5)
+                subprocess.run(["sudo", "nmcli", "radio", "wifi", "off"], timeout=5, check=False)
             else:
-                subprocess.run(["nmcli", "radio", "wifi", "on"], timeout=5)
+                subprocess.run(["sudo", "nmcli", "radio", "wifi", "on"], timeout=5, check=False)
             GLib.idle_add(self.update_status)
         except Exception as e:
             print(f"Error toggling WiFi: {e}")
