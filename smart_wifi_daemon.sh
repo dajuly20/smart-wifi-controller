@@ -14,6 +14,9 @@ TRAY_ICON_DIR="$CONFIG_DIR/icons"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/smart_wifi_core.sh" ]; then
     source "$SCRIPT_DIR/smart_wifi_core.sh"
+    # Log loaded file
+    mkdir -p "$(dirname "$LOG_FILE")"
+    echo "$(printf '[%-8s]\t%s\t%s' 'INFO' "$(date '+%d. %b %H:%M:%S')" "Datei geladen: $SCRIPT_DIR/smart_wifi_core.sh")" >> "$LOG_FILE"
 else
     echo "Error: smart_wifi_core.sh not found!"
     exit 1
@@ -198,18 +201,76 @@ cleanup() {
     exit 0
 }
 
+# Create autostart desktop entry for tray icon
+create_tray_icon_autostart() {
+    local autostart_dir="$HOME/.config/autostart"
+    mkdir -p "$autostart_dir"
+
+    cat > "$autostart_dir/smart-wifi-controller-tray.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=Smart WiFi Controller Tray Icon
+Comment=Show WiFi Controller status in system tray
+Exec=python3 %h/.config/smart_wifi_controller/icons/tray_icon.py
+Icon=network-wireless
+Terminal=false
+Hidden=false
+Categories=Network;Utility;
+OnlyShowIn=GNOME;KDE;XFCE;Cinnamon;MATE;
+StartupNotify=false
+EOF
+    chmod 644 "$autostart_dir/smart-wifi-controller-tray.desktop"
+}
+
+# Start tray icon if available and X11 is available
+start_tray_icon_if_available() {
+    local tray_script="$TRAY_ICON_DIR/tray_icon.py"
+
+    # Check if tray icon script exists
+    if [ ! -f "$tray_script" ]; then
+        log_message "WARN" "Tray Icon Script nicht gefunden: $tray_script"
+        return 1
+    fi
+
+    # Check if Python3 is available
+    if ! command -v python3 &> /dev/null; then
+        log_message "WARN" "Python3 nicht gefunden - Tray Icon kann nicht gestartet werden"
+        return 1
+    fi
+
+    # Check if X11 is available
+    if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+        log_message "DEBUG" "Keine Desktop-Session erkannt (DISPLAY/WAYLAND nicht gesetzt)"
+        return 1
+    fi
+
+    # Start tray icon in background
+    nohup python3 "$tray_script" > /dev/null 2>&1 &
+    local pid=$!
+    log_message "INFO" "Tray Icon gestartet (PID: $pid)"
+    return 0
+}
+
 # Main daemon loop
 main() {
     ensure_directories
     create_tray_icon
     create_tray_icon_script
+    create_tray_icon_autostart
     save_pid
 
+    log_message "INFO" "======================================"
     log_message "SUCCESS" "Smart WiFi Controller Daemon gestartet (PID: $$)"
+    log_message "INFO" "Log-Datei: $LOG_FILE"
+    log_message "INFO" "Tray Icon Autostart: $HOME/.config/autostart/smart-wifi-controller-tray.desktop"
+    log_message "INFO" "======================================"
     update_status "Initialisierung..."
 
     # Trap signals for clean shutdown
     trap cleanup SIGTERM SIGINT
+
+    # Try to start tray icon if in desktop session
+    start_tray_icon_if_available
 
     # Main loop - check every 5 seconds
     while true; do
