@@ -317,20 +317,54 @@ if [ "$INSTALL_TYPE" = "verify" ]; then
     errors=0
 
     # Check files
-    for file in smart_wifi_controller.sh smart_wifi_core.sh smart_wifi_gui_prompts.sh; do
-        if [ -f "$INSTALL_DIR/$file" ] || [ -f "$INSTALL_DIR/${file%.sh}" ]; then
-            echo -e "${GREEN}✓${NC} $file vorhanden"
-        else
-            echo -e "${RED}✗${NC} $file FEHLT"
-            ((errors++))
-        fi
-    done
+    echo "Überprüfe Dateien in $INSTALL_DIR:"
+
+    # Main script (installed as smart-wifi-controller)
+    if [ -f "$INSTALL_DIR/$INSTALLED_NAME" ]; then
+        echo -e "${GREEN}✓${NC} smart-wifi-controller vorhanden"
+    else
+        echo -e "${RED}✗${NC} smart-wifi-controller FEHLT"
+        ((errors++))
+    fi
+
+    # Core library
+    if [ -f "$INSTALL_DIR/smart_wifi_core.sh" ]; then
+        echo -e "${GREEN}✓${NC} smart_wifi_core.sh vorhanden"
+    else
+        echo -e "${RED}✗${NC} smart_wifi_core.sh FEHLT"
+        ((errors++))
+    fi
+
+    # GUI prompts
+    if [ -f "$INSTALL_DIR/smart_wifi_gui_prompts.sh" ]; then
+        echo -e "${GREEN}✓${NC} smart_wifi_gui_prompts.sh vorhanden"
+    else
+        echo -e "${RED}✗${NC} smart_wifi_gui_prompts.sh FEHLT"
+        ((errors++))
+    fi
+
+    # Conditions engine
+    if [ -f "$INSTALL_DIR/smart_wifi_conditions.sh" ]; then
+        echo -e "${GREEN}✓${NC} smart_wifi_conditions.sh vorhanden"
+    else
+        echo -e "${RED}✗${NC} smart_wifi_conditions.sh FEHLT"
+        ((errors++))
+    fi
+
+    # Daemon script
+    if [ -f "$INSTALL_DIR/smart_wifi_daemon" ] || [ -f "$INSTALL_DIR/smart_wifi_daemon.sh" ]; then
+        echo -e "${GREEN}✓${NC} smart_wifi_daemon vorhanden"
+    else
+        echo -e "${RED}✗${NC} smart_wifi_daemon FEHLT"
+        ((errors++))
+    fi
 
     # Check command
+    echo ""
     if command -v "$INSTALLED_NAME" &> /dev/null; then
-        echo -e "${GREEN}✓${NC} Befehl verfügbar"
+        echo -e "${GREEN}✓${NC} Befehl 'smart-wifi-controller' verfügbar"
     else
-        echo -e "${RED}✗${NC} Befehl NICHT verfügbar"
+        echo -e "${RED}✗${NC} Befehl 'smart-wifi-controller' NICHT verfügbar"
         ((errors++))
     fi
 
