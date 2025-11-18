@@ -215,6 +215,9 @@ if [ "$INSTALL_TYPE" = "service_install" ]; then
 
     echo "Kopiere Service-Datei nach $SYSTEMD_DIR..."
     if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
+        # Ensure permissions are correct
+        chmod 644 "$SYSTEMD_DIR/smart-wifi-controller.service"
+
         # Reload systemd daemon
         systemctl daemon-reload
         echo -e "${GREEN}✓${NC} Service-Datei installiert"
@@ -489,6 +492,9 @@ if [ "$INSTALL_DAEMON" = true ] || [ "$INSTALL_TYPE" = "update" ]; then
     mkdir -p "$SYSTEMD_DIR"
 
     if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
+        # Ensure permissions are correct
+        chmod 644 "$SYSTEMD_DIR/smart-wifi-controller.service"
+
         # Reload systemd daemon
         systemctl daemon-reload
         echo -e "${GREEN}✓ Systemd Service installiert/aktualisiert${NC}"

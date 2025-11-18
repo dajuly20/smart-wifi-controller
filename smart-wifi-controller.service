@@ -1,26 +1,24 @@
 [Unit]
 Description=Smart WiFi Controller - Intelligent Network Management
-After=dbus.service
-# Don't require network to be online - this would delay login
-# The daemon will work without it and wait for network if needed
+After=dbus.service network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=%u
-ExecStart=%h/.local/bin/smart_wifi_daemon
+User=root
+ExecStart=/usr/local/bin/smart_wifi_daemon
 ExecStop=/bin/kill -TERM $MAINPID
 Restart=on-failure
 RestartSec=10
 
-# Don't block login - run with standard I/O redirection
+# Logging to journal
 StandardInput=null
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=smart-wifi-controller
 
-# Set environment variables
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus"
+# Environment
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
