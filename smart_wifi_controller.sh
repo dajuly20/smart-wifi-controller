@@ -31,24 +31,46 @@ ask_password_gui() {
 }
 
 # Check if we need sudo and handle password
-export SUDO_ASKPASS_HELPER=1
-if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-    # We need sudo and don't have passwordless sudo configured
-    password=$(ask_password_gui)
-    if [ $? -ne 0 ] || [ -z "$password" ]; then
-        echo "Passwort erforderlich. Abbruch."
-        exit 1
-    fi
-    # Export password for sudo -S
-    export SUDO_PASSWORD="$password"
-fi
+# DISABLED: Password prompt removed
+# export SUDO_ASKPASS_HELPER=1
+# if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
+#     # We need sudo and don't have passwordless sudo configured
+#     password=$(ask_password_gui)
+#     if [ $? -ne 0 ] || [ -z "$password" ]; then
+#         echo "Passwort erforderlich. Abbruch."
+#         exit 1
+#     fi
+#     # Export password for sudo -S
+#     export SUDO_PASSWORD="$password"
+# fi
 
 # Source the core logic
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/smart_wifi_core.sh" ]; then
     source "$SCRIPT_DIR/smart_wifi_core.sh"
+    # Log loaded file
+    mkdir -p "$(dirname "$LOG_FILE")"
+    echo "$(printf '[%-8s]\t%s\t%s' 'INFO' "$(date '+%d. %b %H:%M:%S')" "Datei geladen: $SCRIPT_DIR/smart_wifi_core.sh")" >> "$LOG_FILE"
 else
     echo "Error: smart_wifi_core.sh not found!"
+    exit 1
+fi
+
+# Source condition evaluation engine
+if [ -f "$SCRIPT_DIR/smart_wifi_conditions.sh" ]; then
+    source "$SCRIPT_DIR/smart_wifi_conditions.sh"
+    echo "$(printf '[%-8s]\t%s\t%s' 'INFO' "$(date '+%d. %b %H:%M:%S')" "Datei geladen: $SCRIPT_DIR/smart_wifi_conditions.sh")" >> "$LOG_FILE"
+else
+    echo "Error: smart_wifi_conditions.sh not found!"
+    exit 1
+fi
+
+# Source GUI prompts
+if [ -f "$SCRIPT_DIR/smart_wifi_gui_prompts.sh" ]; then
+    source "$SCRIPT_DIR/smart_wifi_gui_prompts.sh"
+    echo "$(printf '[%-8s]\t%s\t%s' 'INFO' "$(date '+%d. %b %H:%M:%S')" "Datei geladen: $SCRIPT_DIR/smart_wifi_gui_prompts.sh")" >> "$LOG_FILE"
+else
+    echo "Error: smart_wifi_gui_prompts.sh not found!"
     exit 1
 fi
 
@@ -57,6 +79,10 @@ CONFIG_FILE="$HOME/.config/smart_wifi_controller_config"
 
 # Temporary decision file (until reboot)
 TEMP_DECISION_FILE="/tmp/smart_wifi_controller_decision"
+
+# Rules configuration file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RULES_FILE="$SCRIPT_DIR/smart_wifi_rules.conf"
 
 # Function to check if required tools are installed (extended version for GUI)
 check_dependencies() {
@@ -127,6 +153,37 @@ clear_saved_decision() {
         rm -f "$TEMP_DECISION_FILE"
         log_message "INFO" "Gespeicherte Entscheidung gelöscht"
     fi
+}
+
+# ============================================================================
+# WiFi Rules Management
+# ============================================================================
+
+# Function to parse and apply WiFi rules from configuration file
+load_and_apply_rules() {
+    if [ ! -f "$RULES_FILE" ]; then
+        log_message "WARN" "Rules-Datei nicht gefunden: $RULES_FILE"
+        return 1
+    fi
+
+    log_message "INFO" "Lade WiFi-Management-Rules aus: $RULES_FILE"
+
+    # Parse each rule line
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^#.*$ ]] && continue
+        [[ -z "$line" ]] && continue
+
+        # Parse rule: [interface] = condition
+        if [[ "$line" =~ ^\[([^\]]+)\].*=(.*)$ ]]; then
+            local interface="${BASH_REMATCH[1]}"
+            local condition="${BASH_REMATCH[2]}"
+            condition=$(echo "$condition" | xargs)  # Trim whitespace
+
+            # Apply rule using condition evaluation engine
+            apply_rule "$interface" "$condition"
+        fi
+    done < "$RULES_FILE"
 }
 
 # Function to get network interface details
@@ -296,9 +353,9 @@ show_message() {
     local title="$1"
     local message="$2"
     local type="${3:-info}" # info, warning, error
-    
+
     local gui_cmd=$(get_gui_command)
-    
+
     case "$gui_cmd" in
         "zenity")
             case "$type" in
@@ -328,6 +385,7 @@ show_message() {
             ;;
     esac
 }
+
 
 # Function to get network interface status
 get_ethernet_status() {
@@ -437,13 +495,13 @@ show_gui() {
     local saved_decision=""
     if saved_decision=$(check_saved_decision); then
         log_message "INFO" "Gespeicherte Entscheidung gefunden: $saved_decision"
-        
+
         if [ "$saved_decision" = "disable_wifi" ] && [ "$eth_status" = "connected" ] && [ "$wifi_status" = "on" ]; then
-            log_message "INFO" "Führe gespeicherte Entscheidung aus: WiFi deaktivieren"
+            log_message "SUCCESS" "Auto-Ausführung: Deaktiviere WiFi (gespeicherte Entscheidung)"
             manage_connections
             return 0
         elif [ "$saved_decision" = "enable_wifi" ] && [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "off" ]; then
-            log_message "INFO" "Führe gespeicherte Entscheidung aus: WiFi aktivieren"
+            log_message "SUCCESS" "Auto-Ausführung: Aktiviere WiFi (gespeicherte Entscheidung)"
             manage_connections
             return 0
         fi
@@ -617,68 +675,106 @@ Die Entscheidung wird nicht beibehalten - nächste Prüfung läuft normal." \
     esac
 }
 
-# Main script logic
+# Function for continuous CLI watch mode
+watch_mode() {
+    # Get interface names
+    local eth_interface=$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | grep ":ethernet" | head -n1 | cut -d: -f1)
+    local wifi_interface=$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | grep ":wifi" | head -n1 | cut -d: -f1)
+
+    # Default if not found
+    eth_interface="${eth_interface:-eth0}"
+    wifi_interface="${wifi_interface:-wlan0}"
+
+    log_message "INFO" "======================================"
+    log_message "INFO" "Smart WiFi Controller Watch-Mode gestartet (CLI)"
+    log_message "INFO" "Überwache Interfaces: [$eth_interface] [$wifi_interface]"
+    log_message "INFO" "Prüfe alle 5 Sekunden auf Änderungen..."
+    log_message "INFO" "Stoppen mit: CTRL+C"
+    log_message "INFO" "======================================"
+
+    # Track previous state
+    local prev_eth_status=""
+    local prev_wifi_status=""
+
+    # Setup signal handler for graceful shutdown
+    trap 'log_message "INFO" "Watch-Mode beendet (CTRL+C)"; exit 0' SIGINT SIGTERM
+
+    # Load rules once at startup
+    load_and_apply_rules
+
+    # Main watch loop
+    while true; do
+        local eth_status=$(get_ethernet_status)
+        local wifi_status=$(get_wifi_status)
+
+        # Check if status changed
+        if [ "$eth_status" != "$prev_eth_status" ] || [ "$wifi_status" != "$prev_wifi_status" ]; then
+            # Status changed
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📊 Status geändert! ($(date '+%H:%M:%S'))"
+            echo "🔌 Ethernet [$eth_interface]: $prev_eth_status → $eth_status"
+            echo "📶 WiFi [$wifi_interface]: $prev_wifi_status → $wifi_status"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            log_message "INFO" "Status-Änderung erkannt: [$eth_interface]=$eth_status, [$wifi_interface]=$wifi_status"
+
+            # Determine action based on status change
+            local action=""
+            if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "on" ]; then
+                action="disable"
+            elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "off" ]; then
+                action="enable"
+            fi
+
+            # Show decision dialog if an action is needed
+            if [ -n "$action" ]; then
+                if [ "$action" = "disable" ]; then
+                    # Call GUI dialog for disabling WiFi
+                    ask_disable_wifi "$eth_interface" "$wifi_interface" "$eth_status" "$wifi_status"
+                else
+                    # Call GUI dialog for enabling WiFi
+                    ask_enable_wifi "$eth_interface" "$wifi_interface" "$eth_status" "$wifi_status"
+                fi
+                local dialog_result=$?
+
+                if [ $dialog_result -eq 0 ]; then
+                    # User clicked "Ok/Ja" - apply rule and save decision
+                    log_message "INFO" "Benutzer bestätigte: Ja (speichern und ausführen)"
+                    save_decision "${action}_wifi"
+                    load_and_apply_rules
+                else
+                    # User closed dialog or clicked cancel - no action
+                    log_message "INFO" "Benutzer lehnte ab oder schloss Dialog (keine Aktion)"
+                fi
+            else
+                # Apply rules automatically if no user action needed
+                log_message "DEBUG" "Keine Benutzeraktion erforderlich - wende Regeln an"
+                load_and_apply_rules
+            fi
+
+            # Update tracked state
+            prev_eth_status="$eth_status"
+            prev_wifi_status="$wifi_status"
+        fi
+
+        sleep 5
+    done
+}
+
+# Main script logic - Always run in watch mode
 main() {
     # Log script startup
     log_message "INFO" "======================================"
     log_message "INFO" "Smart WiFi Controller Script gestartet"
-    log_message "INFO" "Parameter: ${*:-'(keine)'}"
+    log_message "INFO" "Log-Datei: $LOG_FILE"
+    log_message "INFO" "Rules-Datei: $RULES_FILE"
     log_message "INFO" "======================================"
-    
-    case "${1:-}" in
-        --status)
-            show_status
-            ;;
-        --log|--logs)
-            if command -v zenity &> /dev/null || command -v kdialog &> /dev/null; then
-                show_log_gui
-            else
-                echo "=== Smart WiFi Controller Log (letzte 15 Einträge) ==="
-                get_recent_logs 15
-            fi
-            ;;
-        --manual)
-            local result=$(manage_connections)
-            echo "$result"
-            ;;
-        --clear-decision)
-            clear_saved_decision
-            echo "Gespeicherte Entscheidung wurde gelöscht."
-            ;;
-        --help|-h)
-            cat << EOF
-Smart WiFi Controller Script - Intelligente WiFi/Ethernet Verwaltung
 
-Verwendung:
-  $0                 Interaktive GUI (Standard)
-  $0 --status        Aktuellen Status anzeigen
-  $0 --log           Log-Einträge anzeigen (letzte 15)
-  $0 --manual        Einmalige manuelle Ausführung (ohne GUI)
-  $0 --clear-decision Gespeicherte Entscheidung löschen
-  $0 --help          Diese Hilfe anzeigen
-
-Features:
-• Intelligente WiFi/Ethernet Verwaltung mit GUI
-• IP-Adressen und Geschwindigkeits-Anzeige
-• "Entscheidung bis Neustart merken" Option
-• Detaillierte Protokollierung aller Aktionen
-• Unterstützung für Zenity und KDialog
-
-Das Script überprüft intelligent die Netzwerkverbindungen und bietet
-an, WiFi zu deaktivieren (bei Ethernet) oder zu aktivieren (ohne Ethernet).
-
-Log-Datei: $LOG_FILE
-Temp-Entscheidung: $TEMP_DECISION_FILE
-EOF
-            ;;
-        *)
-            # Default: Show interactive GUI
-            check_dependencies
-            log_message "INFO" "Smart WiFi Controller gestartet (GUI-Modus)"
-            show_gui
-            ;;
-    esac
+    check_dependencies
+    watch_mode
 }
 
-# Run main function with all arguments
-main "$@"
+# Run main function
+main

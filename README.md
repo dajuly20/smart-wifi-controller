@@ -102,6 +102,122 @@ smart-wifi-controller --log
 
 ## Konfiguration
 
+### WiFi Management Rules
+
+Das Script wird durch eine **Rules-Konfigurationsdatei** gesteuert, die definiert, wann WiFi aktiviert oder deaktiviert werden soll.
+
+**Speicherort:** `<script-verzeichnis>/smart_wifi_rules.conf`
+
+#### Rule-Format
+
+```
+[interface] = condition
+```
+
+**Beispiel:**
+```
+[wlan0] = NOT (any eth connected)
+```
+
+#### Verfügbare Bedingungen
+
+| Bedingung | Bedeutung | Beispiel |
+|-----------|-----------|---------|
+| `NOT (any eth connected)` | WiFi **AN**, wenn **KEINE** Ethernet verbunden ist | WiFi beim Laptop-Betrieb |
+| `(any eth connected)` | WiFi **AN**, wenn Ethernet **verbunden** ist (selten) | Spezialfall |
+| `always on` | WiFi **immer aktivieren** | Notfall-Netzwerk |
+| `always off` | WiFi **immer deaktivieren** | Sicherheits-Regelung |
+
+#### Praktische Beispiele
+
+**Beispiel 1: Standard-Nutzung (WiFi aus bei Ethernet)**
+```bash
+# ~/.smart-wifi-controller/smart_wifi_rules.conf
+[wlan0] = NOT (any eth connected)
+```
+
+**Szenario:**
+- ✅ Ethernet verbunden → WiFi deaktiviert
+- ✅ Ethernet getrennt → WiFi aktiviert
+- ✅ Nur WiFi → WiFi aktiviert
+
+**Beispiel 2: Mehrere Interfaces**
+```bash
+[wlan0] = NOT (any eth connected)
+[wlan1] = NOT (any eth connected)
+```
+
+**Beispiel 3: WiFi immer aktiv**
+```bash
+[wlan0] = always on
+```
+
+**Beispiel 4: WiFi immer deaktiviert (z.B. Sicherheit)**
+```bash
+[wlan0] = always off
+```
+
+#### Erklärung für dein Szenario
+
+**Anforderung:** *"Sobald irgendeine Ethernet-Connection aktiv ist und die Verbindung zum Netzwerk hat, WiFi deaktivieren."*
+
+**Konfiguration:**
+```bash
+[wlan0] = NOT (any eth connected)
+```
+
+**Was bedeutet das?**
+- `[wlan0]` = Regel für WiFi-Interface `wlan0`
+- `NOT (any eth connected)` = **NICHT** (irgendeine Ethernet verbunden)
+- Das bedeutet: WiFi ist **aktiv**, wenn **KEINE** Ethernet-Verbindung besteht
+
+**Konkrete Szenarien:**
+```
+┌─────────────────────────────────┬──────────┐
+│ Zustand                         │ WiFi     │
+├─────────────────────────────────┼──────────┤
+│ Ethernet verbunden + Internet   │ AUS ❌   │
+│ Ethernet verbunden, kein Net.   │ AUS ❌   │
+│ Ethernet getrennt               │ AN ✅    │
+│ Nur WiFi, kein Ethernet         │ AN ✅    │
+└─────────────────────────────────┴──────────┘
+```
+
+#### Live-Monitoring der Rules
+
+Das Script startet mit automatischem Monitoring:
+
+```bash
+# Script starten
+./smart_wifi_controller.sh
+```
+
+**Beispiel-Log-Ausgabe:**
+```
+[INFO    ]	20. Nov 13:37:15	======================================
+[INFO    ]	20. Nov 13:37:15	Smart WiFi Controller Script gestartet
+[INFO    ]	20. Nov 13:37:15	Log-Datei: /home/user/.local/share/smart_wifi_controller/smart_wifi_controller.log
+[INFO    ]	20. Nov 13:37:15	Rules-Datei: /home/user/smart-wifi-controller/smart_wifi_rules.conf
+[INFO    ]	20. Nov 13:37:15	====================================
+[INFO    ]	20. Nov 13:37:15	Lade WiFi-Management-Rules aus: /home/user/smart-wifi-controller/smart_wifi_rules.conf
+[INFO    ]	20. Nov 13:37:15	Evaluiere Rule: [wlan0] = NOT (any eth connected)
+[INFO    ]	20. Nov 13:37:15	Regel anwenden: [wlan0] DEAKTIVIEREN (Bedingung: NOT (any eth connected))
+```
+
+**Bei Status-Änderung:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Status geändert! (13:37:15)
+🔌 Ethernet [eth0]: disconnected → connected
+📶 WiFi [wlan0]: on → off
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[INFO    ]	20. Nov 13:37:15	Status-Änderung erkannt: [eth0]=connected, [wlan0]=off
+[INFO    ]	20. Nov 13:37:15	Lade WiFi-Management-Rules aus: /home/user/smart-wifi-controller/smart_wifi_rules.conf
+[INFO    ]	20. Nov 13:37:15	Evaluiere Rule: [wlan0] = NOT (any eth connected)
+[INFO    ]	20. Nov 13:37:15	Regel anwenden: [wlan0] DEAKTIVIEREN (Bedingung erfüllt)
+```
+
 ### Konfigurationsdatei
 
 Speicherort: `~/.config/smart_wifi_controller_config`
