@@ -37,13 +37,20 @@ create_tray_icon_script() {
 import sys
 import os
 import signal
+import subprocess
+import psutil
+
+# Self-elevate if not running with sudo
+if os.geteuid() != 0:
+    # Re-run script with sudo
+    args = ['sudo', sys.executable] + sys.argv
+    os.execlp('sudo', 'sudo', sys.executable, *sys.argv)
+
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
 
 from gi.repository import Gtk, AppIndicator3, GLib
-import subprocess
-import psutil
 
 class SmartWiFiIndicator:
     def __init__(self):
@@ -242,9 +249,9 @@ class SmartWiFiIndicator:
         try:
             current_status = self.get_wifi_status()
             if current_status == "AN":
-                subprocess.run(["sudo", "nmcli", "radio", "wifi", "off"], timeout=5)
+                subprocess.run(["nmcli", "radio", "wifi", "off"], timeout=5)
             else:
-                subprocess.run(["sudo", "nmcli", "radio", "wifi", "on"], timeout=5)
+                subprocess.run(["nmcli", "radio", "wifi", "on"], timeout=5)
             GLib.idle_add(self.update_status)
         except Exception as e:
             print(f"Error toggling WiFi: {e}")

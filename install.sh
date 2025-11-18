@@ -205,6 +205,29 @@ fi
 
 echo ""
 
+# Configure passwordless sudo for tray icon
+setup_passwordless_sudo() {
+    local sudoers_file="/etc/sudoers.d/smart-wifi-controller"
+
+    # Check if sudoers file already exists
+    if [ -f "$sudoers_file" ]; then
+        return 0  # Already configured
+    fi
+
+    # Create sudoers entry for passwordless nmcli commands
+    cat > "$sudoers_file" << 'EOF'
+# Smart WiFi Controller - Passwordless sudo for system tray icon
+Defaults:root !requiretty
+%users ALL=(ALL) NOPASSWD: /usr/bin/nmcli radio wifi on
+%users ALL=(ALL) NOPASSWD: /usr/bin/nmcli radio wifi off
+EOF
+
+    # Set correct permissions
+    chmod 440 "$sudoers_file"
+
+    return 0
+}
+
 # Handle service installation only
 if [ "$INSTALL_TYPE" = "service_install" ]; then
     echo "Installiere/Verwalte Dienst..."
@@ -217,6 +240,11 @@ if [ "$INSTALL_TYPE" = "service_install" ]; then
     if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
         # Ensure permissions are correct
         chmod 644 "$SYSTEMD_DIR/smart-wifi-controller.service"
+
+        # Configure passwordless sudo for tray icon
+        echo "Konfiguriere passwordless sudo für Tray Icon..."
+        setup_passwordless_sudo
+        echo -e "${GREEN}✓${NC} Passwordless sudo konfiguriert"
 
         # Reload systemd daemon
         systemctl daemon-reload
