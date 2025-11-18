@@ -74,7 +74,7 @@ if check_installation; then
     fi
 
     # Check command location
-    local cmd_path=$(command -v "$INSTALLED_NAME" 2>/dev/null)
+    cmd_path=$(command -v "$INSTALLED_NAME" 2>/dev/null)
     echo -e "Installiert:   $cmd_path"
 else
     echo -e "Status:        ${RED}✗ NICHT INSTALLIERT${NC}"
@@ -136,7 +136,7 @@ else
             echo -e "${BLUE}═══ ABHÄNGIGKEITSPRÜFUNG ═══${NC}"
             echo ""
 
-            local missing_deps=()
+            missing_deps=()
 
             # Check for NetworkManager
             if command -v nmcli &> /dev/null; then
@@ -242,7 +242,7 @@ if [ "$INSTALL_TYPE" = "verify" ]; then
     echo "Verifiziere Installation..."
     echo ""
 
-    local errors=0
+    errors=0
 
     # Check files
     for file in smart_wifi_controller.sh smart_wifi_core.sh smart_wifi_gui_prompts.sh; do
