@@ -63,14 +63,16 @@ if check_installation; then
     echo -e "Status:        ${GREEN}✓ INSTALLIERT${NC}"
 
     # Check daemon status
+    daemon_installed=false
     if systemctl --user is-enabled --quiet smart-wifi-controller 2>/dev/null; then
+        daemon_installed=true
         if systemctl --user is-active --quiet smart-wifi-controller 2>/dev/null; then
-            echo -e "Daemon:        ${GREEN}✓ AKTIV (läuft)${NC}"
+            echo -e "Dienst:        ${GREEN}✓ AKTIV (läuft)${NC}"
         else
-            echo -e "Daemon:        ${YELLOW}⚠ INSTALLIERT (gestoppt)${NC}"
+            echo -e "Dienst:        ${YELLOW}⚠ INSTALLIERT (gestoppt)${NC}"
         fi
     else
-        echo -e "Daemon:        ${YELLOW}✗ NICHT AKTIVIERT${NC}"
+        echo -e "Dienst:        ${YELLOW}✗ NICHT INSTALLIERT${NC}"
     fi
 
     # Check command location
@@ -78,7 +80,8 @@ if check_installation; then
     echo -e "Installiert:   $cmd_path"
 else
     echo -e "Status:        ${RED}✗ NICHT INSTALLIERT${NC}"
-    echo -e "Daemon:        ${RED}✗ NICHT INSTALLIERT${NC}"
+    echo -e "Dienst:        ${RED}✗ NICHT INSTALLIERT${NC}"
+    daemon_installed=false
 fi
 
 echo ""
@@ -87,10 +90,15 @@ echo ""
 
 if check_installation; then
     echo "  [I] Installation überprüfen"
-    echo "  [R] Neu installieren / Update"
+    echo "  [R] Update durchführen"
+    if [ "$daemon_installed" = false ]; then
+        echo "  [S] Dienst installieren"
+    else
+        echo "  [S] Dienst verwalten"
+    fi
     echo "  [D] Deinstallieren"
     echo ""
-    read -p "Wähle Option (I/R/D): " option
+    read -p "Wähle Option (I/R/S/D): " option
     option=$(echo "$option" | tr '[:lower:]' '[:upper:]')
 
     case "$option" in
@@ -99,9 +107,14 @@ if check_installation; then
             INSTALL_TYPE="verify"
             ;;
         R)
-            echo "✓ Starte Update/Neuinstallation..."
+            echo "✓ Starte Update..."
             INSTALL_TYPE="update"
             INSTALL_DAEMON=false
+            ;;
+        S)
+            echo "✓ Installiere/Verwalte Dienst..."
+            INSTALL_TYPE="service_install"
+            INSTALL_DAEMON=true
             ;;
         D)
             echo ""
@@ -191,6 +204,65 @@ else
 fi
 
 echo ""
+
+# Handle service installation only
+if [ "$INSTALL_TYPE" = "service_install" ]; then
+    echo "Installiere/Verwalte Dienst..."
+    echo ""
+
+    SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_DIR"
+
+    echo "Kopiere Service-Datei..."
+    if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
+        # Update the service file to use correct paths
+        sed -i "s|%u|$USER|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+        sed -i "s|%U|$(id -u)|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+        sed -i "s|%h|$HOME|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+
+        # Reload systemd daemon
+        systemctl --user daemon-reload
+        echo -e "${GREEN}✓${NC} Service-Datei installiert"
+
+        # Start the service
+        echo ""
+        echo "Starte Dienst..."
+        systemctl --user start smart-wifi-controller
+
+        if systemctl --user is-active --quiet smart-wifi-controller; then
+            echo -e "${GREEN}✓${NC} Dienst erfolgreich gestartet"
+        else
+            echo -e "${YELLOW}⚠${NC} Dienst konnte nicht gestartet werden"
+        fi
+
+        # Ask to enable at startup
+        echo ""
+        read -p "Dienst beim Hochfahren automatisch starten? (j/n) [Standard: j]: " enable_choice
+        enable_choice=${enable_choice:-j}
+
+        if [[ "$enable_choice" =~ ^[Jj] ]]; then
+            systemctl --user enable smart-wifi-controller
+            echo -e "${GREEN}✓${NC} Dienst beim Hochfahren aktiviert"
+        fi
+
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║      Dienst erfolgreich installiert! ✓                    ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Verwendung:"
+        echo "  systemctl --user status smart-wifi-controller   # Status anzeigen"
+        echo "  systemctl --user start smart-wifi-controller    # Dienst starten"
+        echo "  systemctl --user stop smart-wifi-controller     # Dienst stoppen"
+        echo "  systemctl --user restart smart-wifi-controller  # Dienst neustarten"
+        echo "  journalctl --user -u smart-wifi-controller -f   # Logs anzeigen"
+        echo ""
+    else
+        echo -e "${RED}✗${NC} Fehler beim Installieren der Service-Datei"
+        exit 1
+    fi
+    exit 0
+fi
 
 # Handle uninstall
 if [ "$INSTALL_TYPE" = "uninstall" ]; then
