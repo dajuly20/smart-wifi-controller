@@ -69,59 +69,223 @@ class SmartWiFiIndicator:
     def build_menu(self):
         menu = Gtk.Menu()
 
-        # Status item
-        self.status_item = Gtk.MenuItem(label="Status: Prüfe...")
-        menu.append(self.status_item)
+        # Status sections
+        self.ethernet_item = Gtk.MenuItem(label="🔌 Ethernet: Prüfe...")
+        menu.append(self.ethernet_item)
+
+        self.wifi_item = Gtk.MenuItem(label="📶 WiFi: Prüfe...")
+        menu.append(self.wifi_item)
 
         menu.append(Gtk.SeparatorMenuItem())
 
+        # Quick actions
+        self.wifi_toggle = Gtk.MenuItem(label="📶 WiFi aktivieren")
+        self.wifi_toggle.connect("activate", self.toggle_wifi_quick)
+        menu.append(self.wifi_toggle)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # Saved decision
+        self.decision_item = Gtk.MenuItem(label="💾 Gespeicherte Entscheidung: Keine")
+        self.decision_item.connect("activate", self.show_saved_decision)
+        menu.append(self.decision_item)
+
+        # Reload rules
+        reload_item = Gtk.MenuItem(label="🔄 Regeln neu laden")
+        reload_item.connect("activate", self.reload_rules)
+        menu.append(reload_item)
+
         # Open logs
-        logs_item = Gtk.MenuItem(label="Logs anzeigen")
+        logs_item = Gtk.MenuItem(label="📋 Logs anzeigen")
         logs_item.connect("activate", self.show_logs)
         menu.append(logs_item)
 
-        # Stop daemon
-        stop_item = Gtk.MenuItem(label="Daemon stoppen")
-        stop_item.connect("activate", self.stop_daemon)
-        menu.append(stop_item)
+        # Daemon info
+        info_item = Gtk.MenuItem(label="ℹ️  Daemon Info")
+        info_item.connect("activate", self.show_daemon_info)
+        menu.append(info_item)
 
         menu.append(Gtk.SeparatorMenuItem())
 
-        # Quit
-        quit_item = Gtk.MenuItem(label="Beenden")
+        # Stop daemon
+        stop_item = Gtk.MenuItem(label="⛔ Daemon stoppen")
+        stop_item.connect("activate", self.stop_daemon)
+        menu.append(stop_item)
+
+        # Quit tray icon
+        quit_item = Gtk.MenuItem(label="❌ Tray Icon beenden")
         quit_item.connect("activate", self.quit_application)
         menu.append(quit_item)
 
         menu.show_all()
         return menu
 
+    def get_ethernet_status(self):
+        """Get Ethernet status using nmcli"""
+        try:
+            result = subprocess.run(
+                "nmcli -t -f NAME,TYPE,STATE connection show --active 2>/dev/null | grep ethernet | grep activated",
+                shell=True, capture_output=True, text=True, timeout=5
+            )
+            return "verbunden" if result.returncode == 0 else "getrennt"
+        except:
+            return "Fehler"
+
+    def get_wifi_status(self):
+        """Get WiFi status using nmcli"""
+        try:
+            result = subprocess.run(
+                "nmcli radio wifi 2>/dev/null",
+                shell=True, capture_output=True, text=True, timeout=5
+            )
+            status = result.stdout.strip().lower()
+            return "AN" if status == "enabled" else "AUS"
+        except:
+            return "Fehler"
+
+    def get_saved_decision(self):
+        """Get saved decision from temp file"""
+        decision_file = "/tmp/smart_wifi_controller_decision"
+        if os.path.exists(decision_file):
+            try:
+                with open(decision_file, 'r') as f:
+                    decision = f.read().strip()
+                    if decision == "disable_wifi":
+                        return "WiFi deaktivieren"
+                    elif decision == "enable_wifi":
+                        return "WiFi aktivieren"
+            except:
+                pass
+        return None
+
     def update_status(self):
         try:
-            # Read status from daemon
-            if os.path.exists(self.status_file):
-                with open(self.status_file, 'r') as f:
-                    status = f.read().strip()
+            # Get actual network status
+            eth_status = self.get_ethernet_status()
+            wifi_status = self.get_wifi_status()
+
+            # Update status items
+            eth_emoji = "✅" if eth_status == "verbunden" else "❌"
+            wifi_emoji = "✅" if wifi_status == "AN" else "❌"
+
+            self.ethernet_item.set_label(f"🔌 Ethernet: {eth_emoji} {eth_status.upper()}")
+            self.wifi_item.set_label(f"📶 WiFi: {wifi_emoji} {wifi_status}")
+
+            # Update WiFi toggle label
+            if wifi_status == "AN":
+                self.wifi_toggle.set_label("📵 WiFi deaktivieren")
             else:
-                status = "Inaktiv"
+                self.wifi_toggle.set_label("📶 WiFi aktivieren")
+
+            # Update saved decision display
+            saved_decision = self.get_saved_decision()
+            if saved_decision:
+                self.decision_item.set_label(f"💾 Gespeicherte Entscheidung: {saved_decision}")
+            else:
+                self.decision_item.set_label("💾 Gespeicherte Entscheidung: Keine")
 
             # Check if daemon is running
             daemon_running = False
             if os.path.exists(self.pid_file):
-                with open(self.pid_file, 'r') as f:
-                    pid = int(f.read().strip())
-                    try:
+                try:
+                    with open(self.pid_file, 'r') as f:
+                        pid = int(f.read().strip())
                         daemon_running = psutil.pid_exists(pid)
-                    except:
-                        daemon_running = False
+                except:
+                    daemon_running = False
 
-            if daemon_running:
-                self.status_item.set_label(f"Status: {status}")
+            # Update indicator icon based on WiFi status
+            if not daemon_running:
+                self.indicator.set_status(AppIndicator3.IndicatorStatus.ATTENTION)
             else:
-                self.status_item.set_label("Status: Daemon läuft nicht")
+                self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+
         except Exception as e:
-            self.status_item.set_label(f"Status: Fehler ({str(e)[:20]})")
+            print(f"Error updating status: {e}")
 
         return True
+
+    def show_saved_decision(self, widget):
+        """Show and manage saved decision"""
+        decision_file = "/tmp/smart_wifi_controller_decision"
+        saved_decision = self.get_saved_decision()
+
+        if saved_decision:
+            dialog = Gtk.MessageDialog(
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.YES_NO,
+                message_format="Gespeicherte Entscheidung"
+            )
+            dialog.format_secondary_text(f"Aktuelle Entscheidung: {saved_decision}\n\nMöchtest du diese löschen?")
+            response = dialog.run()
+            dialog.destroy()
+
+            if response == Gtk.ResponseType.YES:
+                try:
+                    os.remove(decision_file)
+                    print("Entscheidung gelöscht")
+                    GLib.idle_add(self.update_status)
+                except:
+                    pass
+        else:
+            dialog = Gtk.MessageDialog(
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                message_format="Keine Entscheidung gespeichert"
+            )
+            dialog.format_secondary_text("Es gibt keine gespeicherte Entscheidung.")
+            dialog.run()
+            dialog.destroy()
+
+    def toggle_wifi_quick(self, widget):
+        """Quick toggle WiFi on/off"""
+        try:
+            current_status = self.get_wifi_status()
+            if current_status == "AN":
+                subprocess.run(["sudo", "nmcli", "radio", "wifi", "off"], timeout=5)
+            else:
+                subprocess.run(["sudo", "nmcli", "radio", "wifi", "on"], timeout=5)
+            GLib.idle_add(self.update_status)
+        except Exception as e:
+            print(f"Error toggling WiFi: {e}")
+
+    def reload_rules(self, widget):
+        """Reload rules by signaling daemon"""
+        try:
+            if os.path.exists(self.pid_file):
+                with open(self.pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, signal.SIGUSR1)
+                print("Regeln neu geladen")
+        except Exception as e:
+            print(f"Error reloading rules: {e}")
+
+    def show_daemon_info(self, widget):
+        """Show daemon information dialog"""
+        try:
+            config_dir = os.path.expanduser('~/.config/smart_wifi_controller')
+            log_dir = os.path.expanduser('~/.local/share/smart_wifi_controller')
+            daemon_log = os.path.join(log_dir, 'daemon.log')
+
+            last_logs = "Keine Logs"
+            if os.path.exists(daemon_log):
+                try:
+                    result = subprocess.run(
+                        f"tail -n 3 {daemon_log}",
+                        shell=True, capture_output=True, text=True, timeout=5
+                    )
+                    if result.stdout:
+                        last_logs = result.stdout.strip()
+                except:
+                    pass
+
+            info_text = f"Config: {config_dir}\\nLogs: {log_dir}\\n\\nLetzte Einträge:\\n{last_logs}"
+            dialog = Gtk.MessageDialog(message_format="Smart WiFi Controller")
+            dialog.format_secondary_text(info_text)
+            dialog.run()
+            dialog.destroy()
+        except Exception as e:
+            print(f"Error: {e}")
 
     def show_logs(self, widget):
         log_file = os.path.expanduser('~/.local/share/smart_wifi_controller/daemon.log')
