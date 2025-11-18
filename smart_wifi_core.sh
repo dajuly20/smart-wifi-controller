@@ -22,8 +22,8 @@ log_message() {
         level="INFO"
     fi
 
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-    local log_entry="[$timestamp] [$level] $message"
+    local timestamp="$(date '+%d. %b %H:%M:%S')"
+    local log_entry="$(printf '[%-8s]\t%s\t%s' "$level" "$timestamp" "$message")"
 
     # Write to log file if LOG_FILE is set
     if [ -n "$LOG_FILE" ]; then
@@ -31,19 +31,22 @@ log_message() {
         echo "$log_entry" >> "$LOG_FILE"
     fi
 
-    # Also display on console with color coding
+    # Also display on console with color coding and emojis
     case "$level" in
         "ERROR")
-            echo -e "${RED}[ERROR]${NC} $message" >&2
+            echo -e "${RED}❌ [ERROR]${NC} $message" >&2
             ;;
         "WARN")
-            echo -e "${YELLOW}[WARN]${NC} $message" >&2
+            echo -e "${YELLOW}⚠️  [WARN]${NC} $message" >&2
             ;;
         "SUCCESS")
-            echo -e "${GREEN}[SUCCESS]${NC} $message"
+            echo -e "${GREEN}✅ [SUCCESS]${NC} $message"
+            ;;
+        "DEBUG")
+            echo -e "${BLUE}🔍 [DEBUG]${NC} $message"
             ;;
         *)
-            echo -e "${BLUE}[INFO]${NC} $message"
+            echo -e "${BLUE}ℹ️  [INFO]${NC} $message"
             ;;
     esac
 }
@@ -62,32 +65,32 @@ ensure_log_directory() {
 check_dependencies() {
     local missing_tools=()
 
-    log_message "INFO" "Überprüfe Systemabhängigkeiten..."
+    log_message "INFO" "🔍 Überprüfe Systemabhängigkeiten..."
 
     # Check for NetworkManager
     if ! command -v nmcli &> /dev/null; then
         missing_tools+=("NetworkManager (nmcli)")
-        log_message "ERROR" "NetworkManager (nmcli) nicht gefunden"
+        log_message "ERROR" "❌ NetworkManager (nmcli) nicht gefunden"
     else
-        log_message "INFO" "NetworkManager verfügbar"
+        log_message "SUCCESS" "✅ NetworkManager verfügbar"
     fi
 
     if [ ${#missing_tools[@]} -ne 0 ]; then
-        log_message "ERROR" "Abhängigkeiten fehlen: ${missing_tools[*]}"
-        echo -e "${RED}Fehler: Folgende Tools fehlen:${NC}"
+        log_message "ERROR" "❌ Abhängigkeiten fehlen: ${missing_tools[*]}"
+        echo -e "${RED}❌ Fehler: Folgende Tools fehlen:${NC}"
         for tool in "${missing_tools[@]}"; do
-            echo "  - $tool"
+            echo "  • $tool"
         done
         echo ""
-        echo "Installation unter Ubuntu/Debian:"
-        echo "sudo apt update && sudo apt install network-manager"
+        echo -e "${YELLOW}📦 Installation unter Ubuntu/Debian:${NC}"
+        echo "  sudo apt update && sudo apt install network-manager"
         echo ""
-        echo "Installation unter Fedora/RHEL:"
-        echo "sudo dnf install NetworkManager"
+        echo -e "${YELLOW}📦 Installation unter Fedora/RHEL:${NC}"
+        echo "  sudo dnf install NetworkManager"
         return 1
     fi
 
-    log_message "SUCCESS" "Alle Abhängigkeiten erfüllt"
+    log_message "SUCCESS" "✅ Alle Abhängigkeiten erfüllt"
     return 0
 }
 
@@ -124,27 +127,29 @@ toggle_wifi() {
     local action="$1" # on or off
     local sudo_cmd="sudo"
 
-    # Use password if available
-    if [ -n "$SUDO_PASSWORD" ]; then
-        sudo_cmd="echo '$SUDO_PASSWORD' | sudo -S"
-    fi
+    # Password prompt removed - using plain sudo
+    # if [ -n "$SUDO_PASSWORD" ]; then
+    #     sudo_cmd="echo '$SUDO_PASSWORD' | sudo -S"
+    # fi
 
     if [ "$action" = "on" ]; then
-        log_message "INFO" "Versuche WiFi zu aktivieren..."
+        log_message "INFO" "📶 Versuche WiFi zu aktivieren..."
+        log_message "DEBUG" "   Ausführe: $sudo_cmd nmcli radio wifi on"
         if eval "$sudo_cmd nmcli radio wifi on" 2>/dev/null; then
-            log_message "SUCCESS" "WiFi erfolgreich aktiviert"
+            log_message "SUCCESS" "✅ WiFi erfolgreich aktiviert"
             return 0
         else
-            log_message "ERROR" "Fehler beim Aktivieren von WiFi"
+            log_message "ERROR" "❌ Fehler beim Aktivieren von WiFi (nmcli Fehler)"
             return 1
         fi
     elif [ "$action" = "off" ]; then
-        log_message "INFO" "Versuche WiFi zu deaktivieren..."
+        log_message "INFO" "📵 Versuche WiFi zu deaktivieren..."
+        log_message "DEBUG" "   Ausführe: $sudo_cmd nmcli radio wifi off"
         if eval "$sudo_cmd nmcli radio wifi off" 2>/dev/null; then
-            log_message "SUCCESS" "WiFi erfolgreich deaktiviert"
+            log_message "SUCCESS" "✅ WiFi erfolgreich deaktiviert"
             return 0
         else
-            log_message "ERROR" "Fehler beim Deaktivieren von WiFi"
+            log_message "ERROR" "❌ Fehler beim Deaktivieren von WiFi (nmcli Fehler)"
             return 1
         fi
     else
@@ -153,42 +158,80 @@ toggle_wifi() {
     fi
 }
 
+# Function to show configuration and paths
+show_config_info() {
+    log_message "DEBUG" "📁 Konfigurationspfade:"
+    [ -n "$LOG_FILE" ] && log_message "DEBUG" "   📝 Log-Datei: $LOG_FILE"
+    [ -n "$CONFIG_FILE" ] && log_message "DEBUG" "   ⚙️  Konfiguration: $CONFIG_FILE"
+    [ -n "$RULES_FILE" ] && log_message "DEBUG" "   📋 Regeln-Datei: $RULES_FILE"
+    [ -n "$TEMP_DECISION_FILE" ] && log_message "DEBUG" "   💾 Temp-Entscheidung: $TEMP_DECISION_FILE"
+}
+
+# Function to show status with details
+show_status_details() {
+    local eth_status="$1"
+    local wifi_status="$2"
+
+    log_message "DEBUG" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_message "DEBUG" "🔌 Ethernet:  $([ "$eth_status" = "connected" ] && echo '✅ VERBUNDEN' || echo '❌ GETRENNT')"
+    log_message "DEBUG" "📶 WiFi:      $([ "$wifi_status" = "on" ] && echo '✅ AN' || echo '❌ AUS')"
+    log_message "DEBUG" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# Function to check and apply saved decision
+check_and_apply_saved_decision() {
+    if [ -f "$TEMP_DECISION_FILE" ] 2>/dev/null; then
+        local saved=$(cat "$TEMP_DECISION_FILE")
+        log_message "INFO" "💾 Gespeicherte Entscheidung gefunden: $saved"
+        log_message "DEBUG" "   📂 Pfad: $TEMP_DECISION_FILE"
+        log_message "INFO" "   ➜ Wende gespeicherte Entscheidung an..."
+        return 0
+    fi
+    return 1
+}
+
 # Function to check and manage network connections
 manage_network() {
     local eth_status=$(get_ethernet_status)
     local wifi_status=$(get_wifi_status)
     local action_taken=""
 
-    log_message "INFO" "=== Netzwerk-Check gestartet ==="
-    log_message "INFO" "Ethernet Status: $eth_status"
-    log_message "INFO" "WiFi Status: $wifi_status"
+    log_message "INFO" "━━━ 🔄 NETZWERK-CHECK GESTARTET ━━━"
+    show_status_details "$eth_status" "$wifi_status"
+    show_config_info
+    echo ""
+
+    # Check if saved decision applies
+    check_and_apply_saved_decision
 
     if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "on" ]; then
         # Ethernet connected and WiFi enabled -> disable WiFi
-        log_message "INFO" "Ethernet verbunden und WiFi aktiv - deaktiviere WiFi"
+        log_message "INFO" "🔌 Ethernet verbunden + 📶 WiFi aktiv"
+        log_message "INFO" "   → Aktion: WiFi deaktivieren"
         if toggle_wifi "off"; then
-            action_taken="WiFi wurde deaktiviert (Ethernet-Verbindung erkannt)"
+            action_taken="✅ WiFi wurde deaktiviert (Ethernet-Verbindung erkannt)"
             log_message "SUCCESS" "$action_taken"
         else
-            action_taken="Fehler beim Deaktivieren von WiFi"
+            action_taken="❌ Fehler beim Deaktivieren von WiFi"
             log_message "ERROR" "$action_taken"
         fi
     elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "off" ]; then
         # Ethernet disconnected and WiFi disabled -> enable WiFi
-        log_message "INFO" "Ethernet getrennt und WiFi inaktiv - aktiviere WiFi"
+        log_message "INFO" "❌ Ethernet getrennt + 📶 WiFi inaktiv"
+        log_message "INFO" "   → Aktion: WiFi aktivieren"
         if toggle_wifi "on"; then
-            action_taken="WiFi wurde aktiviert (keine Ethernet-Verbindung)"
+            action_taken="✅ WiFi wurde aktiviert (keine Ethernet-Verbindung)"
             log_message "SUCCESS" "$action_taken"
         else
-            action_taken="Fehler beim Aktivieren von WiFi"
+            action_taken="❌ Fehler beim Aktivieren von WiFi"
             log_message "ERROR" "$action_taken"
         fi
     else
-        log_message "INFO" "Keine Aktion erforderlich"
-        action_taken="Keine Änderung erforderlich (Ethernet: $eth_status, WiFi: $wifi_status)"
+        log_message "INFO" "ℹ️  Keine Aktion erforderlich"
+        action_taken="➜ Keine Änderung (Ethernet: $eth_status, WiFi: $wifi_status)"
     fi
 
-    log_message "INFO" "=== Netzwerk-Check beendet ==="
+    log_message "INFO" "━━━ ✅ NETZWERK-CHECK BEENDET ━━━"
     echo "$action_taken"
 }
 
