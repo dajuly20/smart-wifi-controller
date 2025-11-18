@@ -5,72 +5,65 @@
 # Author: Smart WiFi Controller Script
 # Date: $(date)
 
+# Set log file before sourcing core
+LOG_FILE="$HOME/.local/share/smart_wifi_controller/smart_wifi_controller.log"
+
+# Function to get GUI password if sudo is required
+ask_password_gui() {
+    local gui_cmd=""
+
+    # Detect which GUI tool is available
+    if command -v zenity &> /dev/null; then
+        gui_cmd="zenity"
+    elif command -v kdialog &> /dev/null; then
+        gui_cmd="kdialog"
+    else
+        return 1  # No GUI available, let sudo handle it
+    fi
+
+    # Ask for password
+    if [ "$gui_cmd" = "zenity" ]; then
+        zenity --password --title="Smart WiFi Controller" \
+            --text="Dieses Programm benötigt Administrator-Rechte.\nBitte geben Sie Ihr Passwort ein:"
+    else
+        kdialog --password "Passwort erforderlich für Smart WiFi Controller:"
+    fi
+}
+
+# Check if we need sudo and handle password
+export SUDO_ASKPASS_HELPER=1
+if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
+    # We need sudo and don't have passwordless sudo configured
+    password=$(ask_password_gui)
+    if [ $? -ne 0 ] || [ -z "$password" ]; then
+        echo "Passwort erforderlich. Abbruch."
+        exit 1
+    fi
+    # Export password for sudo -S
+    export SUDO_PASSWORD="$password"
+fi
+
+# Source the core logic
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/smart_wifi_core.sh" ]; then
+    source "$SCRIPT_DIR/smart_wifi_core.sh"
+else
+    echo "Error: smart_wifi_core.sh not found!"
+    exit 1
+fi
+
 # Configuration file for settings (simplified - not used in single-run mode)
 CONFIG_FILE="$HOME/.config/smart_wifi_controller_config"
 
 # Temporary decision file (until reboot)
 TEMP_DECISION_FILE="/tmp/smart_wifi_controller_decision"
 
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Log file
-LOG_FILE="$HOME/.local/share/smart_wifi_controller/smart_wifi_controller.log"
-
-# Function to ensure log directory exists
-ensure_log_directory() {
-    local log_dir=$(dirname "$LOG_FILE")
-    if [ ! -d "$log_dir" ]; then
-        mkdir -p "$log_dir"
-    fi
-}
-
-# Function to log messages with different levels
-log_message() {
-    local level="${1:-INFO}"
-    local message="$2"
-    
-    # If only one parameter is provided, treat it as INFO level message
-    if [ -z "$message" ]; then
-        message="$level"
-        level="INFO"
-    fi
-    
-    ensure_log_directory
-    
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-    local log_entry="[$timestamp] [$level] $message"
-    
-    # Write to log file
-    echo "$log_entry" >> "$LOG_FILE"
-    
-    # Also display on console with color coding
-    case "$level" in
-        "ERROR")
-            echo -e "${RED}[ERROR]${NC} $message"
-            ;;
-        "WARN")
-            echo -e "${YELLOW}[WARN]${NC} $message"
-            ;;
-        "SUCCESS")
-            echo -e "${GREEN}[SUCCESS]${NC} $message"
-            ;;
-        *)
-            echo -e "${BLUE}[INFO]${NC} $message"
-            ;;
-    esac
-}
-
-# Function to check if required tools are installed
+# Function to check if required tools are installed (extended version for GUI)
 check_dependencies() {
     local missing_tools=()
-    
+
     log_message "INFO" "Überprüfe Systemabhängigkeiten..."
-    
+
     # Check for NetworkManager
     if ! command -v nmcli &> /dev/null; then
         missing_tools+=("NetworkManager (nmcli)")
@@ -78,7 +71,7 @@ check_dependencies() {
     else
         log_message "INFO" "NetworkManager verfügbar"
     fi
-    
+
     # Check for GUI tools
     if ! command -v zenity &> /dev/null && ! command -v kdialog &> /dev/null; then
         missing_tools+=("zenity oder kdialog")
@@ -91,7 +84,7 @@ check_dependencies() {
             log_message "INFO" "KDialog GUI verfügbar"
         fi
     fi
-    
+
     if [ ${#missing_tools[@]} -ne 0 ]; then
         log_message "ERROR" "Abhängigkeiten fehlen: ${missing_tools[*]}"
         echo -e "${RED}Fehler: Folgende Tools fehlen:${NC}"
@@ -104,10 +97,11 @@ check_dependencies() {
         echo ""
         echo "Installation unter Fedora/RHEL:"
         echo "sudo dnf install NetworkManager zenity"
-        exit 1
+        return 1
     fi
-    
+
     log_message "SUCCESS" "Alle Abhängigkeiten erfüllt"
+    return 0
 }
 
 # Function to save user decision until reboot
@@ -268,16 +262,6 @@ get_interface_details() {
     echo "$result"
 }
 
-# Function to get the last N log entries
-get_recent_logs() {
-    local num_entries="${1:-15}"
-    
-    if [ -f "$LOG_FILE" ]; then
-        tail -n "$num_entries" "$LOG_FILE"
-    else
-        echo "Keine Log-Einträge vorhanden."
-    fi
-}
 
 # Function to show log entries in GUI
 show_log_gui() {
@@ -359,16 +343,33 @@ get_ethernet_status() {
 # Function to get WiFi status
 get_wifi_status() {
     local wifi_state=$(nmcli radio wifi)
-    echo "$wifi_state"
+    # Normalize output: "enabled" -> "on", "disabled" -> "off"
+    case "$wifi_state" in
+        "enabled")
+            echo "on"
+            ;;
+        "disabled")
+            echo "off"
+            ;;
+        *)
+            echo "$wifi_state"
+            ;;
+    esac
 }
 
 # Function to enable/disable WiFi
 toggle_wifi() {
     local action="$1" # on or off
-    
+    local sudo_cmd="sudo"
+
+    # Use password if available
+    if [ -n "$SUDO_PASSWORD" ]; then
+        sudo_cmd="echo '$SUDO_PASSWORD' | sudo -S"
+    fi
+
     if [ "$action" = "on" ]; then
         log_message "INFO" "Versuche WiFi zu aktivieren..."
-        if nmcli radio wifi on 2>/dev/null; then
+        if eval "$sudo_cmd nmcli radio wifi on" 2>/dev/null; then
             log_message "SUCCESS" "WiFi erfolgreich aktiviert"
             return 0
         else
@@ -377,7 +378,7 @@ toggle_wifi() {
         fi
     elif [ "$action" = "off" ]; then
         log_message "INFO" "Versuche WiFi zu deaktivieren..."
-        if nmcli radio wifi off 2>/dev/null; then
+        if eval "$sudo_cmd nmcli radio wifi off" 2>/dev/null; then
             log_message "SUCCESS" "WiFi erfolgreich deaktiviert"
             return 0
         else
@@ -390,43 +391,9 @@ toggle_wifi() {
     fi
 }
 
-# Function to check and manage network connections
+# Wrapper for compatibility with core logic
 manage_connections() {
-    local eth_status=$(get_ethernet_status)
-    local wifi_status=$(get_wifi_status)
-    local action_taken=""
-    
-    log_message "INFO" "=== Netzwerk-Check gestartet ==="
-    log_message "INFO" "Ethernet Status: $eth_status"
-    log_message "INFO" "WiFi Status: $wifi_status"
-    
-    if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "enabled" ]; then
-        # Ethernet connected and WiFi enabled -> disable WiFi
-        log_message "INFO" "Ethernet verbunden und WiFi aktiv - deaktiviere WiFi"
-        if toggle_wifi "off"; then
-            action_taken="WiFi wurde deaktiviert (Ethernet-Verbindung erkannt)"
-            log_message "SUCCESS" "$action_taken"
-        else
-            action_taken="Fehler beim Deaktivieren von WiFi"
-            log_message "ERROR" "$action_taken"
-        fi
-    elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "disabled" ]; then
-        # Ethernet disconnected and WiFi disabled -> enable WiFi
-        log_message "INFO" "Ethernet getrennt und WiFi inaktiv - aktiviere WiFi"
-        if toggle_wifi "on"; then
-            action_taken="WiFi wurde aktiviert (keine Ethernet-Verbindung)"
-            log_message "SUCCESS" "$action_taken"
-        else
-            action_taken="Fehler beim Aktivieren von WiFi"
-            log_message "ERROR" "$action_taken"
-        fi
-    else
-        log_message "INFO" "Keine Aktion erforderlich"
-        action_taken="Keine Änderung erforderlich (Ethernet: $eth_status, WiFi: $wifi_status)"
-    fi
-    
-    log_message "INFO" "=== Netzwerk-Check beendet ==="
-    echo "$action_taken"
+    manage_network
 }
 
 # Function to show current status
@@ -471,11 +438,11 @@ show_gui() {
     if saved_decision=$(check_saved_decision); then
         log_message "INFO" "Gespeicherte Entscheidung gefunden: $saved_decision"
         
-        if [ "$saved_decision" = "disable_wifi" ] && [ "$eth_status" = "connected" ] && [ "$wifi_status" = "enabled" ]; then
+        if [ "$saved_decision" = "disable_wifi" ] && [ "$eth_status" = "connected" ] && [ "$wifi_status" = "on" ]; then
             log_message "INFO" "Führe gespeicherte Entscheidung aus: WiFi deaktivieren"
             manage_connections
             return 0
-        elif [ "$saved_decision" = "enable_wifi" ] && [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "disabled" ]; then
+        elif [ "$saved_decision" = "enable_wifi" ] && [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "off" ]; then
             log_message "INFO" "Führe gespeicherte Entscheidung aus: WiFi aktivieren"
             manage_connections
             return 0
@@ -493,23 +460,29 @@ show_gui() {
     local question=""
     local decision_key=""
     
-    if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "enabled" ]; then
+    local check_interval="5 Sekunden"  # From daemon.sh sleep interval
+
+    if [ "$eth_status" = "connected" ] && [ "$wifi_status" = "on" ]; then
         question="🔌 Ethernet-Verbindung erkannt und WiFi ist aktiv
 
 📊 Netzwerk-Details:
 • Ethernet ($eth_interface): $eth_details
 • WiFi ($wifi_interface): $wifi_details
 
+⏱️  Nächste Prüfung: $check_interval
+
 Möchten Sie WiFi deaktivieren?"
         action_text="WiFi deaktivieren"
         decision_key="disable_wifi"
         
-    elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "disabled" ]; then
+    elif [ "$eth_status" = "disconnected" ] && [ "$wifi_status" = "off" ]; then
         question="📡 Keine Ethernet-Verbindung und WiFi ist deaktiviert
 
 📊 Netzwerk-Details:
 • Ethernet ($eth_interface): $eth_details
 • WiFi ($wifi_interface): $wifi_details
+
+⏱️  Nächste Prüfung: $check_interval
 
 Möchten Sie WiFi aktivieren?"
         action_text="WiFi aktivieren"
@@ -523,6 +496,8 @@ Möchten Sie WiFi aktivieren?"
 • Ethernet ($eth_interface): $eth_status - $eth_details
 • WiFi ($wifi_interface): $wifi_status - $wifi_details
 
+⏱️  Nächste Prüfung: $check_interval
+
 Möchten Sie die letzten Log-Einträge anzeigen?"
         
         local gui_cmd=$(get_gui_command)
@@ -532,7 +507,7 @@ Möchten Sie die letzten Log-Einträge anzeigen?"
                 --text="$status_text" \
                 --ok-label="Log anzeigen" \
                 --cancel-label="Schließen" \
-                --width=500 --height=250; then
+                --width=500 --height=280; then
                 show_log_gui
             fi
         else
@@ -544,100 +519,102 @@ Möchten Sie die letzten Log-Einträge anzeigen?"
         return 0
     fi
     
-    # Show GUI question with additional options including "remember decision"
+    # Show GUI with new button logic: Ja (mit Speichern), Nein (ohne Speichern), Abrechen
     local gui_cmd=$(get_gui_command)
     local user_choice=""
-    
+
     if [ "$gui_cmd" = "zenity" ]; then
-        # Use a simpler approach with info dialog and then question
-        zenity --info \
+        # Show single dialog with all options
+        zenity --question \
             --title="Smart WiFi Controller" \
-            --text="$question" \
-            --width=600 --height=400
-            
-        # Then show the action dialog
-        if zenity --question \
-            --title="Smart WiFi Controller - Entscheidung" \
-            --text="Möchten Sie fortfahren?
+            --text="$question
 
-Optionen:
-• Ja: Aktion jetzt ausführen
-• Nein: Abbrechen
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Wie möchten Sie fortfahren?
 
-Für erweiterte Optionen klicken Sie 'Erweitert'." \
-            --width=400 --height=200 \
-            --extra-button="Erweitert" \
+• Ja: Entscheidung speichern & $action_text
+• Nein: $action_text (ohne Speicherung)
+• Abrechen: Aktion abbrechen" \
+            --width=600 --height=350 \
             --ok-label="Ja" \
-            --cancel-label="Nein"; then
-            
-            user_choice="Ja"
-        else
-            case $? in
-                1)  # Nein
-                    user_choice="Nein"
-                    ;;
-                *)  # Erweitert
-                    if zenity --question \
-                        --title="Smart WiFi Controller - Erweiterte Optionen" \
-                        --text="Möchten Sie diese Entscheidung bis zum nächsten Neustart speichern?
+            --cancel-label="Abrechen" \
+            --extra-button="Nein"
 
-Dies führt die Aktion automatisch bei ähnlichen Situationen aus." \
-                        --width=500 --height=200 \
-                        --extra-button="Log anzeigen" \
-                        --ok-label="Ja, merken und ausführen" \
-                        --cancel-label="Nur einmal ausführen"; then
-                        
-                        user_choice="Ja"
-                        save_decision "$decision_key"
-                    else
-                        case $? in
-                            1)  # Nur einmal ausführen
-                                user_choice="Ja"
-                                ;;
-                            *)  # Log anzeigen
-                                show_log_gui
-                                user_choice="Nein"
-                                ;;
-                        esac
-                    fi
-                    ;;
-            esac
-        fi
+        local result=$?
+        case $result in
+            0)  # Ja - mit Speichern
+                user_choice="Ja_mit_speichern"
+                ;;
+            1)  # Abrechen
+                user_choice="Abrechen"
+                ;;
+            *)  # Nein - ohne Speichern
+                user_choice="Ja_ohne_speichern"
+                ;;
+        esac
     else
-        # KDialog fallback - simpler approach
-        if kdialog --yesno "$question" --title "Smart WiFi Controller"; then
-            user_choice="Ja"
+        # KDialog fallback - 2 buttons (Ja mit speichern, Abrechen) + separate Nein-Option
+        kdialog --yesno "$question
+
+Ja = speichern & $action_text
+Nein = Abrechen" --title "Smart WiFi Controller" \
+            --yes-label "Ja (speichern)" --no-label "Abrechen"
+
+        if [ $? -eq 0 ]; then
+            user_choice="Ja_mit_speichern"
         else
-            user_choice="Nein"
+            user_choice="Abrechen"
         fi
     fi
     
     # Process user choice
-    if [ "$user_choice" = "Ja" ]; then
-        local result=$(manage_connections)
-        
-        # Show result with option to view logs
-        if [ "$gui_cmd" = "zenity" ]; then
-            zenity --info \
-                --title="Smart WiFi Controller" \
-                --text="Aktion ausgeführt: $result
+    case "$user_choice" in
+        "Ja_mit_speichern")
+            # Execute action and save decision
+            save_decision "$decision_key"
+            local result=$(manage_connections)
 
-Möchten Sie die Log-Einträge anzeigen?" \
-                --width=450 \
-                --extra-button="Log anzeigen"
-            
-            if [ $? -ne 0 ]; then
-                show_log_gui
+            if [ "$gui_cmd" = "zenity" ]; then
+                zenity --info \
+                    --title="Smart WiFi Controller" \
+                    --text="✅ Aktion ausgeführt und Entscheidung gespeichert!
+
+$result
+
+Die Entscheidung wird bis zur nächsten Netzwerkänderung beibehalten." \
+                    --width=450 --height=180
+            else
+                kdialog --msgbox "Aktion ausgeführt (gespeichert): $result" --title "Smart WiFi Controller"
             fi
-        else
-            kdialog --msgbox "Aktion ausgeführt: $result" --title "Smart WiFi Controller"
-        fi
-        
-        log_message "INFO" "Benutzeraktion abgeschlossen"
-    else
-        log_message "INFO" "Benutzer hat Aktion abgebrochen"
-        show_message "Smart WiFi Controller" "Aktion abgebrochen." "info"
-    fi
+
+            log_message "INFO" "Benutzeraktion ausgeführt und Entscheidung gespeichert"
+            ;;
+
+        "Ja_ohne_speichern")
+            # Execute action WITHOUT saving decision
+            local result=$(manage_connections)
+
+            if [ "$gui_cmd" = "zenity" ]; then
+                zenity --info \
+                    --title="Smart WiFi Controller" \
+                    --text="✅ Aktion ausgeführt (nicht gespeichert)
+
+$result
+
+Die Entscheidung wird nicht beibehalten - nächste Prüfung läuft normal." \
+                    --width=450 --height=180
+            else
+                kdialog --msgbox "Aktion ausgeführt (nicht gespeichert): $result" --title "Smart WiFi Controller"
+            fi
+
+            log_message "INFO" "Benutzeraktion ausgeführt ohne zu speichern"
+            ;;
+
+        "Abrechen")
+            log_message "INFO" "Benutzer hat Aktion abgebrochen"
+            show_message "Smart WiFi Controller" "Aktion abgebrochen." "info"
+            ;;
+    esac
 }
 
 # Main script logic

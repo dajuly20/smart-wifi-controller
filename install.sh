@@ -43,6 +43,43 @@ else
     exit 1
 fi
 
+# Copy and install core logic library
+echo "Kopiere Core-Logik nach $INSTALL_DIR/smart_wifi_core.sh..."
+if cp "$SCRIPT_DIR/smart_wifi_core.sh" "$INSTALL_DIR/smart_wifi_core.sh"; then
+    chmod +x "$INSTALL_DIR/smart_wifi_core.sh"
+    echo -e "${GREEN}✓ Core-Logik erfolgreich installiert${NC}"
+else
+    echo -e "${RED}✗ Fehler beim Kopieren der Core-Logik${NC}"
+    exit 1
+fi
+
+# Copy and install daemon script
+echo "Kopiere Daemon-Script nach $INSTALL_DIR/smart_wifi_daemon..."
+if cp "$SCRIPT_DIR/smart_wifi_daemon.sh" "$INSTALL_DIR/smart_wifi_daemon"; then
+    chmod +x "$INSTALL_DIR/smart_wifi_daemon"
+    echo -e "${GREEN}✓ Daemon-Script erfolgreich installiert${NC}"
+else
+    echo -e "${RED}✗ Fehler beim Kopieren des Daemon-Scripts${NC}"
+    exit 1
+fi
+
+# Install systemd service (user-level)
+echo "Installiere Systemd Service..."
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_DIR"
+if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
+    # Update the service file to use correct paths
+    sed -i "s|%u|$USER|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+    sed -i "s|%U|$(id -u)|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+    sed -i "s|%h|$HOME|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+
+    # Reload systemd daemon
+    systemctl --user daemon-reload
+    echo -e "${GREEN}✓ Systemd Service installiert${NC}"
+else
+    echo -e "${YELLOW}⚠ Systemd Service konnte nicht installiert werden${NC}"
+fi
+
 # Create desktop entry
 echo "Erstelle Desktop-Entry..."
 cat > "$DESKTOP_DIR/smart-wifi-controller.desktop" << EOF
@@ -90,6 +127,17 @@ if ! command -v zenity &> /dev/null && ! command -v kdialog &> /dev/null; then
     missing_deps+=("zenity oder kdialog")
 fi
 
+# Check for Python3 and AppIndicator3 (für System Tray)
+if ! command -v python3 &> /dev/null; then
+    missing_deps+=("python3")
+fi
+
+# Check for AppIndicator3 Python package
+python3 -c "import gi; gi.require_version('AppIndicator3', '0.1')" 2>/dev/null
+if [ $? -ne 0 ]; then
+    missing_deps+=("libappindicator3-1 (für System Tray Icon)")
+fi
+
 if [ ${#missing_deps[@]} -ne 0 ]; then
     echo -e "${YELLOW}⚠ Fehlende Abhängigkeiten:${NC}"
     for dep in "${missing_deps[@]}"; do
@@ -97,10 +145,10 @@ if [ ${#missing_deps[@]} -ne 0 ]; then
     done
     echo ""
     echo "Installation unter Ubuntu/Debian:"
-    echo "sudo apt update && sudo apt install network-manager zenity"
+    echo "sudo apt update && sudo apt install network-manager zenity python3 libappindicator3-1 gir1.2-appindicator3-0.1"
     echo ""
     echo "Installation unter Fedora/RHEL:"
-    echo "sudo dnf install NetworkManager zenity"
+    echo "sudo dnf install NetworkManager zenity python3 libappindicator-gtk3"
 else
     echo -e "${GREEN}✓ Alle Abhängigkeiten sind installiert${NC}"
 fi
@@ -111,7 +159,11 @@ echo ""
 echo "Verwendung:"
 echo "  - GUI starten: $INSTALLED_NAME"
 echo "  - Status anzeigen: $INSTALLED_NAME --status"
-echo "  - Automatisierung aktivieren: $INSTALLED_NAME --enable-auto"
+echo "  - Daemon starten: systemctl --user start smart-wifi-controller"
+echo "  - Daemon aktivieren (beim Hochfahren): systemctl --user enable smart-wifi-controller"
+echo "  - Daemon stoppen: systemctl --user stop smart-wifi-controller"
+echo "  - Daemon Status: systemctl --user status smart-wifi-controller"
+echo "  - System Tray Icon starten: $SYSTEMD_DIR/../../../.config/smart_wifi_controller/icons/tray_icon.py"
 echo "  - Hilfe: $INSTALLED_NAME --help"
 echo ""
 
@@ -121,5 +173,12 @@ if [ "$INSTALL_TYPE" = "user" ]; then
     echo "source ~/.bashrc"
 fi
 
+echo ""
+echo -e "${GREEN}Daemon-Setup:${NC}"
+echo "Um den Daemon beim Hochfahren automatisch zu starten:"
+echo "  systemctl --user enable smart-wifi-controller"
+echo ""
+echo "Um den Daemon jetzt zu starten:"
+echo "  systemctl --user start smart-wifi-controller"
 echo ""
 echo "Das Script kann auch über das Anwendungsmenü gefunden werden (Smart WiFi Controller)."

@@ -1,0 +1,13 @@
+[Unit]
+Description=Smart WiFi Controller Service
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+ExecStart=/usr/local/bin/smart-wifi-controller --daemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

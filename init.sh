@@ -255,11 +255,16 @@ check_dependencies() {
     local deps=(
         "bash:Bash Shell"
         "nmcli:NetworkManager"
+        "python3:Python 3"
     )
-    
+
     local gui_deps=(
         "zenity:Zenity (GUI)"
         "kdialog:KDialog (GUI)"
+    )
+
+    local python_deps=(
+        "gi:PyGObject (für System Tray)"
     )
     
     local missing=()
@@ -315,19 +320,19 @@ check_dependencies() {
             case "$ID" in
                 ubuntu|debian|pop|linuxmint)
                     os_info="Ubuntu/Debian-basiert"
-                    install_cmd="sudo apt update && sudo apt install -y network-manager zenity"
+                    install_cmd="sudo apt update && sudo apt install -y network-manager zenity python3 libappindicator3-1 gir1.2-appindicator3-0.1 python3-gi"
                     ;;
                 fedora|rhel|centos|rocky|almalinux)
                     os_info="Fedora/RHEL-basiert"
-                    install_cmd="sudo dnf install -y NetworkManager zenity"
+                    install_cmd="sudo dnf install -y NetworkManager zenity python3 libappindicator-gtk3 python3-gobject"
                     ;;
                 opensuse*|sles)
                     os_info="openSUSE"
-                    install_cmd="sudo zypper install -y NetworkManager zenity"
+                    install_cmd="sudo zypper install -y NetworkManager zenity python3 libappindicator1 python3-gobject"
                     ;;
                 arch|manjaro|endeavouros)
                     os_info="Arch-basiert"
-                    install_cmd="sudo pacman -S --needed networkmanager zenity"
+                    install_cmd="sudo pacman -S --needed networkmanager zenity python3 libappindicator-gtk3 python-gobject"
                     ;;
                 *)
                     os_info="Unbekannt"
