@@ -1,32 +1,92 @@
 #!/bin/bash
 
-# Installation Script für Smart WiFi Controller
-# Installiert das Smart WiFi Controller Script systemweit
+# Smart WiFi Controller - Installation/Reinstall Script
+# Installiert oder aktualisiert die Installation
+# - Erkennt existierende Installation automatisch
+# - Fragt nach Daemon-Installation bei Neuinstallation
+# - Führt automatisches Update durch bei existierender Installation
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/usr/local/bin"
 DESKTOP_DIR="/usr/share/applications"
 SCRIPT_NAME="smart_wifi_controller.sh"
 INSTALLED_NAME="smart-wifi-controller"
+DEFAULT_LOG_DIR="$HOME/.local/share/smart_wifi_controller"
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
-
-echo -e "${GREEN}Smart WiFi Controller Installation${NC}"
-echo "===================================="
 
 # Check if running as root for system installation
 if [ "$EUID" -eq 0 ]; then
-    echo -e "${YELLOW}Installation als Root erkannt - systemweite Installation${NC}"
     INSTALL_TYPE="system"
+    INSTALL_DIR="/usr/local/bin"
+    DESKTOP_DIR="/usr/share/applications"
 else
-    echo -e "${YELLOW}Installation als normaler Benutzer - lokale Installation${NC}"
+    INSTALL_TYPE="user"
     INSTALL_DIR="$HOME/.local/bin"
     DESKTOP_DIR="$HOME/.local/share/applications"
-    INSTALL_TYPE="user"
+fi
+
+# Check if already installed
+check_installation() {
+    if command -v "$INSTALLED_NAME" &> /dev/null; then
+        return 0  # Already installed
+    else
+        return 1  # Not installed
+    fi
+}
+
+# Show banner
+show_banner() {
+    cat << 'EOF'
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║          Smart WiFi Controller - Installation/Update          ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+EOF
+}
+
+show_banner
+echo ""
+
+# Check if already installed and auto-update
+if check_installation; then
+    echo -e "${BLUE}[INFO]${NC} Existierende Installation erkannt"
+    echo "Starte automatisches Update..."
+    echo ""
+
+    INSTALL_TYPE="update"
+    INSTALL_DAEMON=false  # Daemon-Status bleibt wie es ist
+else
+    echo -e "${GREEN}[NEW]${NC} Neue Installation"
+    echo ""
+
+    # Ask if daemon should be installed
+    echo "Soll der Smart WiFi Controller Daemon installiert werden?"
+    echo "(Der Daemon überwacht Ethernet/WiFi kontinuierlich im Hintergrund)"
+    echo ""
+    read -p "Daemon installieren? (j/n) [Standard: j]: " daemon_choice
+    daemon_choice=${daemon_choice:-j}
+
+    if [[ "$daemon_choice" =~ ^[Jj] ]]; then
+        INSTALL_DAEMON=true
+        echo "✓ Daemon wird installiert"
+    else
+        INSTALL_DAEMON=false
+        echo "✓ Daemon wird nicht installiert"
+    fi
+    echo ""
+
+    # Ask for log location
+    read -p "Log-Verzeichnis [Standard: $DEFAULT_LOG_DIR]: " log_dir
+    log_dir=${log_dir:-$DEFAULT_LOG_DIR}
+    echo "✓ Log-Verzeichnis: $log_dir"
+    echo ""
 fi
 
 # Create directories if they don't exist
@@ -93,21 +153,41 @@ else
     exit 1
 fi
 
-# Install systemd service (user-level)
-echo "Installiere Systemd Service..."
-SYSTEMD_DIR="$HOME/.config/systemd/user"
-mkdir -p "$SYSTEMD_DIR"
-if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
-    # Update the service file to use correct paths
-    sed -i "s|%u|$USER|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
-    sed -i "s|%U|$(id -u)|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
-    sed -i "s|%h|$HOME|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+# Handle daemon installation/update
+if [ "$INSTALL_TYPE" = "update" ]; then
+    # Stop daemon before updating
+    echo "Stoppe Daemon vor Update..."
+    if systemctl --user is-active --quiet smart-wifi-controller 2>/dev/null; then
+        systemctl --user stop smart-wifi-controller
+        echo -e "${GREEN}✓ Daemon gestoppt${NC}"
+    fi
+    echo ""
+fi
 
-    # Reload systemd daemon
-    systemctl --user daemon-reload
-    echo -e "${GREEN}✓ Systemd Service installiert${NC}"
-else
-    echo -e "${YELLOW}⚠ Systemd Service konnte nicht installiert werden${NC}"
+# Install systemd service only if daemon should be installed
+if [ "$INSTALL_DAEMON" = true ] || [ "$INSTALL_TYPE" = "update" ]; then
+    echo "Installiere/Aktualisiere Systemd Service..."
+    SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_DIR"
+
+    if cp "$SCRIPT_DIR/smart-wifi-controller.service" "$SYSTEMD_DIR/smart-wifi-controller.service"; then
+        # Update the service file to use correct paths
+        sed -i "s|%u|$USER|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+        sed -i "s|%U|$(id -u)|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+        sed -i "s|%h|$HOME|g" "$SYSTEMD_DIR/smart-wifi-controller.service"
+
+        # Set log directory in service file if specified
+        if [ -n "$log_dir" ] && [ "$INSTALL_TYPE" != "update" ]; then
+            sed -i "s|LOG_DIR=.*|LOG_DIR=\"$log_dir\"|g" "$SYSTEMD_DIR/smart-wifi-controller.service" 2>/dev/null || true
+        fi
+
+        # Reload systemd daemon
+        systemctl --user daemon-reload
+        echo -e "${GREEN}✓ Systemd Service installiert/aktualisiert${NC}"
+    else
+        echo -e "${YELLOW}⚠ Systemd Service konnte nicht installiert werden${NC}"
+    fi
+    echo ""
 fi
 
 # Create desktop entry
@@ -183,11 +263,26 @@ else
     echo -e "${GREEN}✓ Alle Abhängigkeiten sind installiert${NC}"
 fi
 
+# Restart daemon if it was running (update case)
+if [ "$INSTALL_TYPE" = "update" ]; then
+    echo "Starte Daemon neu..."
+    if systemctl --user is-enabled --quiet smart-wifi-controller 2>/dev/null; then
+        systemctl --user start smart-wifi-controller
+        echo -e "${GREEN}✓ Daemon neugestartet${NC}"
+    fi
+    echo ""
+fi
+
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║     Installation erfolgreich abgeschlossen! ✓              ║"
+if [ "$INSTALL_TYPE" = "update" ]; then
+    echo "║        Update erfolgreich abgeschlossen! ✓               ║"
+else
+    echo "║     Installation erfolgreich abgeschlossen! ✓              ║"
+fi
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
+
 echo -e "${GREEN}Installierte Dateien:${NC}"
 echo "  ✓ smart-wifi-controller (Hauptskript)"
 echo "  ✓ smart_wifi_core.sh (Core-Logik)"
@@ -196,29 +291,43 @@ echo "  ✓ smart_wifi_conditions.sh (Condition-Engine)"
 echo "  ✓ smart_wifi_daemon.sh (Daemon)"
 echo "  ✓ smart_wifi_rules.conf (Regelkonfiguration)"
 echo ""
+
+if [ -n "$log_dir" ]; then
+    echo -e "${GREEN}Log-Verzeichnis:${NC}"
+    echo "  📁 $log_dir"
+    echo ""
+fi
+
 echo -e "${GREEN}Verwendung:${NC}"
 echo "  - GUI starten: $INSTALLED_NAME"
 echo "  - Status anzeigen: $INSTALLED_NAME --status"
-echo "  - Daemon starten: systemctl --user start smart-wifi-controller"
-echo "  - Daemon aktivieren (beim Hochfahren): systemctl --user enable smart-wifi-controller"
-echo "  - Daemon stoppen: systemctl --user stop smart-wifi-controller"
-echo "  - Daemon Status: systemctl --user status smart-wifi-controller"
-echo "  - Update durchführen: sudo ./reinstall.sh"
+
+if [ "$INSTALL_DAEMON" = true ] || [ "$INSTALL_TYPE" = "update" ]; then
+    echo "  - Daemon starten: systemctl --user start smart-wifi-controller"
+    echo "  - Daemon beim Hochfahren aktivieren: systemctl --user enable smart-wifi-controller"
+    echo "  - Daemon stoppen: systemctl --user stop smart-wifi-controller"
+    echo "  - Daemon Status: systemctl --user status smart-wifi-controller"
+    echo "  - Daemon Logs: journalctl --user -u smart-wifi-controller -f"
+fi
+echo "  - Update durchführen: sudo $SCRIPT_DIR/install.sh"
 echo "  - Hilfe: $INSTALLED_NAME --help"
 echo ""
 
-if [ "$INSTALL_TYPE" = "user" ]; then
+if [ "$INSTALL_TYPE" != "update" ] && [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
     echo -e "${YELLOW}Hinweis:${NC} Stellen Sie sicher, dass ~/.local/bin in Ihrem PATH ist:"
-    echo "echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-    echo "source ~/.bashrc"
+    echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+    echo "  source ~/.bashrc"
+    echo ""
 fi
 
-echo ""
-echo -e "${GREEN}Daemon-Setup:${NC}"
-echo "Um den Daemon beim Hochfahren automatisch zu starten:"
-echo "  systemctl --user enable smart-wifi-controller"
-echo ""
-echo "Um den Daemon jetzt zu starten:"
-echo "  systemctl --user start smart-wifi-controller"
-echo ""
+if [ "$INSTALL_DAEMON" = true ] && [ "$INSTALL_TYPE" != "update" ]; then
+    echo -e "${GREEN}Daemon-Setup:${NC}"
+    echo "  Um den Daemon beim Hochfahren automatisch zu starten:"
+    echo "    systemctl --user enable smart-wifi-controller"
+    echo ""
+    echo "  Um den Daemon jetzt zu starten:"
+    echo "    systemctl --user start smart-wifi-controller"
+    echo ""
+fi
+
 echo "Das Script kann auch über das Anwendungsmenü gefunden werden (Smart WiFi Controller)."
