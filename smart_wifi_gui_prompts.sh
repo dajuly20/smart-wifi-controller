@@ -80,9 +80,50 @@ _show_countdown_dialog() {
     return 0
 }
 
+# Helper function to get network interface speed
+_get_interface_speed() {
+    local interface="$1"
+
+    if [ -z "$interface" ] || [ "$interface" = "--" ]; then
+        echo "N/A"
+        return
+    fi
+
+    # Try to get speed from ethtool first (for Ethernet)
+    local speed=$(ethtool "$interface" 2>/dev/null | grep "Speed:" | awk '{print $2}')
+
+    if [ -z "$speed" ] || [ "$speed" = "Unknown!" ]; then
+        # Try sysfs for Ethernet
+        speed=$(cat "/sys/class/net/$interface/speed" 2>/dev/null)
+        if [ -n "$speed" ] && [ "$speed" != "0" ] && [ "$speed" != "-1" ]; then
+            echo "${speed}Mbps"
+            return
+        fi
+
+        # Try to get WiFi bitrate
+        speed=$(iw dev "$interface" link 2>/dev/null | grep "tx bitrate:" | awk '{print $3 " " $4}' | head -n1)
+        if [ -n "$speed" ]; then
+            echo "↑$speed"
+            return
+        fi
+
+        # Check if interface is up
+        local state=$(cat "/sys/class/net/$interface/operstate" 2>/dev/null)
+        if [ "$state" = "up" ]; then
+            echo "up"
+            return
+        fi
+    else
+        echo "$speed"
+        return
+    fi
+
+    echo "N/A"
+}
+
 # ask_disable_wifi <eth_interface> <wlan_interface> <eth_status> <wifi_status> [countdown_seconds]
 # Shows confirmation dialog for disabling WiFi when Ethernet is connected
-# Includes countdown timer in dialog text - auto-confirms when timer reaches zero
+# Includes countdown timer and network speed information
 # Returns: 0 = Ok/Ja (user or auto-confirmed), 1 = Fenster geschlossen/Nein
 ask_disable_wifi() {
     local eth_interface="${1:-eth0}"
@@ -98,11 +139,17 @@ ask_disable_wifi() {
     fi
 
     if [ "$gui_cmd" = "zenity" ]; then
+        # Get network speeds
+        local eth_speed=$(_get_interface_speed "$eth_interface")
+        local wifi_speed=$(_get_interface_speed "$wlan_interface")
+
         # Build the complete message text
         local message="📵 DISABLING WIFI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔌 Ethernet [$eth_interface]: $eth_status
+   └─ Speed: $eth_speed
 📶 WiFi [$wlan_interface]: $wifi_status
+   └─ Speed: $wifi_speed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WiFi jetzt deaktivieren?
@@ -141,7 +188,7 @@ WiFi jetzt deaktivieren?"
 
 # ask_enable_wifi <eth_interface> <wlan_interface> <eth_status> <wifi_status> [countdown_seconds]
 # Shows confirmation dialog for enabling WiFi when Ethernet is disconnected
-# Includes countdown timer in dialog text - auto-confirms when timer reaches zero
+# Includes countdown timer and network speed information
 # Returns: 0 = Ok/Ja (user or auto-confirmed), 1 = Fenster geschlossen/Nein
 ask_enable_wifi() {
     local eth_interface="${1:-eth0}"
@@ -157,11 +204,17 @@ ask_enable_wifi() {
     fi
 
     if [ "$gui_cmd" = "zenity" ]; then
+        # Get network speeds
+        local eth_speed=$(_get_interface_speed "$eth_interface")
+        local wifi_speed=$(_get_interface_speed "$wlan_interface")
+
         # Build the complete message text
         local message="📶 ENABLING WIFI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔌 Ethernet [$eth_interface]: $eth_status
+   └─ Speed: $eth_speed
 📶 WiFi [$wlan_interface]: $wifi_status
+   └─ Speed: $wifi_speed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WiFi jetzt aktivieren?
