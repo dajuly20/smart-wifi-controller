@@ -53,6 +53,26 @@ else
     exit 1
 fi
 
+# Copy and install GUI prompts script
+echo "Kopiere GUI-Prompts nach $INSTALL_DIR/smart_wifi_gui_prompts.sh..."
+if cp "$SCRIPT_DIR/smart_wifi_gui_prompts.sh" "$INSTALL_DIR/smart_wifi_gui_prompts.sh"; then
+    chmod +x "$INSTALL_DIR/smart_wifi_gui_prompts.sh"
+    echo -e "${GREEN}✓ GUI-Prompts erfolgreich installiert${NC}"
+else
+    echo -e "${RED}✗ Fehler beim Kopieren der GUI-Prompts${NC}"
+    exit 1
+fi
+
+# Copy and install conditions evaluation engine
+echo "Kopiere Conditions-Engine nach $INSTALL_DIR/smart_wifi_conditions.sh..."
+if cp "$SCRIPT_DIR/smart_wifi_conditions.sh" "$INSTALL_DIR/smart_wifi_conditions.sh"; then
+    chmod +x "$INSTALL_DIR/smart_wifi_conditions.sh"
+    echo -e "${GREEN}✓ Conditions-Engine erfolgreich installiert${NC}"
+else
+    echo -e "${RED}✗ Fehler beim Kopieren der Conditions-Engine${NC}"
+    exit 1
+fi
+
 # Copy and install daemon script
 echo "Kopiere Daemon-Script nach $INSTALL_DIR/smart_wifi_daemon..."
 if cp "$SCRIPT_DIR/smart_wifi_daemon.sh" "$INSTALL_DIR/smart_wifi_daemon"; then
@@ -60,6 +80,16 @@ if cp "$SCRIPT_DIR/smart_wifi_daemon.sh" "$INSTALL_DIR/smart_wifi_daemon"; then
     echo -e "${GREEN}✓ Daemon-Script erfolgreich installiert${NC}"
 else
     echo -e "${RED}✗ Fehler beim Kopieren des Daemon-Scripts${NC}"
+    exit 1
+fi
+
+# Copy rules configuration
+echo "Kopiere Regeln-Konfiguration nach $INSTALL_DIR/smart_wifi_rules.conf..."
+if cp "$SCRIPT_DIR/smart_wifi_rules.conf" "$INSTALL_DIR/smart_wifi_rules.conf"; then
+    chmod +x "$INSTALL_DIR/smart_wifi_rules.conf"
+    echo -e "${GREEN}✓ Regeln-Konfiguration erfolgreich installiert${NC}"
+else
+    echo -e "${RED}✗ Fehler beim Kopieren der Regeln-Konfiguration${NC}"
     exit 1
 fi
 
@@ -154,16 +184,26 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}Installation abgeschlossen!${NC}"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║     Installation erfolgreich abgeschlossen! ✓              ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Verwendung:"
+echo -e "${GREEN}Installierte Dateien:${NC}"
+echo "  ✓ smart-wifi-controller (Hauptskript)"
+echo "  ✓ smart_wifi_core.sh (Core-Logik)"
+echo "  ✓ smart_wifi_gui_prompts.sh (GUI mit Countdown-Dialog)"
+echo "  ✓ smart_wifi_conditions.sh (Condition-Engine)"
+echo "  ✓ smart_wifi_daemon.sh (Daemon)"
+echo "  ✓ smart_wifi_rules.conf (Regelkonfiguration)"
+echo ""
+echo -e "${GREEN}Verwendung:${NC}"
 echo "  - GUI starten: $INSTALLED_NAME"
 echo "  - Status anzeigen: $INSTALLED_NAME --status"
 echo "  - Daemon starten: systemctl --user start smart-wifi-controller"
 echo "  - Daemon aktivieren (beim Hochfahren): systemctl --user enable smart-wifi-controller"
 echo "  - Daemon stoppen: systemctl --user stop smart-wifi-controller"
 echo "  - Daemon Status: systemctl --user status smart-wifi-controller"
-echo "  - System Tray Icon starten: $SYSTEMD_DIR/../../../.config/smart_wifi_controller/icons/tray_icon.py"
+echo "  - Update durchführen: sudo ./reinstall.sh"
 echo "  - Hilfe: $INSTALLED_NAME --help"
 echo ""
 
