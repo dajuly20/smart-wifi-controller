@@ -82,7 +82,7 @@ _show_countdown_dialog() {
 
 # ask_disable_wifi <eth_interface> <wlan_interface> <eth_status> <wifi_status> [countdown_seconds]
 # Shows confirmation dialog for disabling WiFi when Ethernet is connected
-# Includes countdown timer - auto-confirms when timer reaches zero
+# Includes countdown timer in dialog text - auto-confirms when timer reaches zero
 # Returns: 0 = Ok/Ja (user or auto-confirmed), 1 = Fenster geschlossen/Nein
 ask_disable_wifi() {
     local eth_interface="${1:-eth0}"
@@ -97,41 +97,46 @@ ask_disable_wifi() {
         return 1
     fi
 
-    # Format the message with network details at the top (larger)
-    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔌 Ethernet [$eth_interface]: $eth_status
+    if [ "$gui_cmd" = "zenity" ]; then
+        # Show countdown progress dialog with live updates
+        {
+            for ((i = countdown_seconds; i > 0; i--)); do
+                percent=$(( (countdown_seconds - i) * 100 / countdown_seconds ))
+                echo "$percent"
+                echo "# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "# 🔌 Ethernet [$eth_interface]: $eth_status"
+                echo "# 📶 WiFi [$wlan_interface]: $wifi_status"
+                echo "# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "# "
+                echo "# WiFi sollte deaktiviert werden"
+                echo "# "
+                echo "# WiFi jetzt deaktivieren?"
+                echo "# "
+                echo "# ⏱️  Verbleibend: $i Sekunden..."
+                sleep 1
+            done
+            echo "100"
+            echo "# ✅ Automatisch bestätigt!"
+        } | zenity --progress \
+            --title="Smart WiFi Controller" \
+            --percentage=0 \
+            --width=550 --height=280 \
+            --no-cancel \
+            --auto-close 2>/dev/null
+
+        local result=$?
+        # Progress dialog returns 0 on auto-close
+        return 0
+
+    elif [ "$gui_cmd" = "kdialog" ]; then
+        # KDialog fallback - simple msgbox with timeout
+        local message="🔌 Ethernet [$eth_interface]: $eth_status
 📶 WiFi [$wlan_interface]: $wifi_status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WiFi sollte deaktiviert werden
 
 WiFi jetzt deaktivieren?"
 
-    if [ "$gui_cmd" = "zenity" ]; then
-        # Use an info dialog with timeout for auto-confirmation
-        # Only OK button (press Escape to cancel)
-        # If user doesn't respond in countdown_seconds, auto-confirm (return 0)
-        timeout --signal=KILL "$countdown_seconds" zenity --info \
-            --title="Smart WiFi Controller" \
-            --text="$message" \
-            --width=500 --height=250 \
-            --ok-label="✅ OK (${countdown_seconds}s)" 2>/dev/null
-
-        local result=$?
-        if [ $result -eq 124 ]; then
-            # Timeout - auto-confirm
-            echo -e "${GREEN}[INFO]${NC} Countdown abgelaufen - Aktion automatisch bestätigt"
-            return 0
-        elif [ $result -eq 0 ]; then
-            # User clicked OK
-            return 0
-        else
-            # User pressed Escape
-            return 1
-        fi
-
-    elif [ "$gui_cmd" = "kdialog" ]; then
-        # KDialog fallback - simple msgbox
         kdialog --msgbox "$message" --title "Smart WiFi Controller"
         return $?
     fi
@@ -139,7 +144,7 @@ WiFi jetzt deaktivieren?"
 
 # ask_enable_wifi <eth_interface> <wlan_interface> <eth_status> <wifi_status> [countdown_seconds]
 # Shows confirmation dialog for enabling WiFi when Ethernet is disconnected
-# Includes countdown timer - auto-confirms when timer reaches zero
+# Includes countdown timer in dialog text - auto-confirms when timer reaches zero
 # Returns: 0 = Ok/Ja (user or auto-confirmed), 1 = Fenster geschlossen/Nein
 ask_enable_wifi() {
     local eth_interface="${1:-eth0}"
@@ -154,41 +159,46 @@ ask_enable_wifi() {
         return 1
     fi
 
-    # Format the message with network details at the top (larger)
-    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔌 Ethernet [$eth_interface]: $eth_status
+    if [ "$gui_cmd" = "zenity" ]; then
+        # Show countdown progress dialog with live updates
+        {
+            for ((i = countdown_seconds; i > 0; i--)); do
+                percent=$(( (countdown_seconds - i) * 100 / countdown_seconds ))
+                echo "$percent"
+                echo "# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "# 🔌 Ethernet [$eth_interface]: $eth_status"
+                echo "# 📶 WiFi [$wlan_interface]: $wifi_status"
+                echo "# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "# "
+                echo "# WiFi sollte aktiviert werden"
+                echo "# "
+                echo "# WiFi jetzt aktivieren?"
+                echo "# "
+                echo "# ⏱️  Verbleibend: $i Sekunden..."
+                sleep 1
+            done
+            echo "100"
+            echo "# ✅ Automatisch bestätigt!"
+        } | zenity --progress \
+            --title="Smart WiFi Controller" \
+            --percentage=0 \
+            --width=550 --height=280 \
+            --no-cancel \
+            --auto-close 2>/dev/null
+
+        local result=$?
+        # Progress dialog returns 0 on auto-close
+        return 0
+
+    elif [ "$gui_cmd" = "kdialog" ]; then
+        # KDialog fallback - simple msgbox with timeout
+        local message="🔌 Ethernet [$eth_interface]: $eth_status
 📶 WiFi [$wlan_interface]: $wifi_status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WiFi sollte aktiviert werden
 
 WiFi jetzt aktivieren?"
 
-    if [ "$gui_cmd" = "zenity" ]; then
-        # Use an info dialog with timeout for auto-confirmation
-        # Only OK button (press Escape to cancel)
-        # If user doesn't respond in countdown_seconds, auto-confirm (return 0)
-        timeout --signal=KILL "$countdown_seconds" zenity --info \
-            --title="Smart WiFi Controller" \
-            --text="$message" \
-            --width=500 --height=250 \
-            --ok-label="✅ OK (${countdown_seconds}s)" 2>/dev/null
-
-        local result=$?
-        if [ $result -eq 124 ]; then
-            # Timeout - auto-confirm
-            echo -e "${GREEN}[INFO]${NC} Countdown abgelaufen - Aktion automatisch bestätigt"
-            return 0
-        elif [ $result -eq 0 ]; then
-            # User clicked OK
-            return 0
-        else
-            # User pressed Escape
-            return 1
-        fi
-
-    elif [ "$gui_cmd" = "kdialog" ]; then
-        # KDialog fallback - simple msgbox
         kdialog --msgbox "$message" --title "Smart WiFi Controller"
         return $?
     fi
