@@ -54,39 +54,222 @@ EOF
 show_banner
 echo ""
 
-# Check if already installed and auto-update
+# Show current status
+echo -e "${BLUE}═══ SYSTEMSTATUS ═══${NC}"
+echo ""
+
+# Check installation status
 if check_installation; then
-    echo -e "${BLUE}[INFO]${NC} Existierende Installation erkannt"
-    echo "Starte automatisches Update..."
-    echo ""
+    echo -e "Status:        ${GREEN}✓ INSTALLIERT${NC}"
 
-    INSTALL_TYPE="update"
-    INSTALL_DAEMON=false  # Daemon-Status bleibt wie es ist
-else
-    echo -e "${GREEN}[NEW]${NC} Neue Installation"
-    echo ""
-
-    # Ask if daemon should be installed
-    echo "Soll der Smart WiFi Controller Daemon installiert werden?"
-    echo "(Der Daemon überwacht Ethernet/WiFi kontinuierlich im Hintergrund)"
-    echo ""
-    read -p "Daemon installieren? (j/n) [Standard: j]: " daemon_choice
-    daemon_choice=${daemon_choice:-j}
-
-    if [[ "$daemon_choice" =~ ^[Jj] ]]; then
-        INSTALL_DAEMON=true
-        echo "✓ Daemon wird installiert"
+    # Check daemon status
+    if systemctl --user is-enabled --quiet smart-wifi-controller 2>/dev/null; then
+        if systemctl --user is-active --quiet smart-wifi-controller 2>/dev/null; then
+            echo -e "Daemon:        ${GREEN}✓ AKTIV (läuft)${NC}"
+        else
+            echo -e "Daemon:        ${YELLOW}⚠ INSTALLIERT (gestoppt)${NC}"
+        fi
     else
-        INSTALL_DAEMON=false
-        echo "✓ Daemon wird nicht installiert"
+        echo -e "Daemon:        ${YELLOW}✗ NICHT AKTIVIERT${NC}"
     fi
+
+    # Check command location
+    local cmd_path=$(command -v "$INSTALLED_NAME" 2>/dev/null)
+    echo -e "Installiert:   $cmd_path"
+else
+    echo -e "Status:        ${RED}✗ NICHT INSTALLIERT${NC}"
+    echo -e "Daemon:        ${RED}✗ NICHT INSTALLIERT${NC}"
+fi
+
+echo ""
+echo -e "${BLUE}═══ OPTIONEN ═══${NC}"
+echo ""
+
+if check_installation; then
+    echo "  [I] Installation überprüfen"
+    echo "  [R] Neu installieren / Update"
+    echo "  [D] Deinstallieren"
+    echo ""
+    read -p "Wähle Option (I/R/D): " option
+    option=$(echo "$option" | tr '[:lower:]' '[:upper:]')
+
+    case "$option" in
+        I)
+            echo "✓ Überprüfe Installation..."
+            INSTALL_TYPE="verify"
+            ;;
+        R)
+            echo "✓ Starte Update/Neuinstallation..."
+            INSTALL_TYPE="update"
+            INSTALL_DAEMON=false
+            ;;
+        D)
+            echo ""
+            echo -e "${RED}VORSICHT: Dies wird Smart WiFi Controller vollständig entfernen!${NC}"
+            read -p "Wirklich deinstallieren? (ja/nein): " confirm
+            if [ "$confirm" = "ja" ]; then
+                INSTALL_TYPE="uninstall"
+            else
+                echo "Abgebrochen."
+                exit 0
+            fi
+            ;;
+        *)
+            echo -e "${RED}Ungültige Option${NC}"
+            exit 1
+            ;;
+    esac
+else
+    echo "  [I] Installieren"
+    echo "  [D] Deinstallieren"
+    echo ""
+    read -p "Wähle Option (I/D): " option
+    option=$(echo "$option" | tr '[:lower:]' '[:upper:]')
+
+    case "$option" in
+        I)
+            echo "✓ Starte Installation..."
+            INSTALL_TYPE="install"
+
+            # Check dependencies first
+            echo ""
+            echo -e "${BLUE}═══ ABHÄNGIGKEITSPRÜFUNG ═══${NC}"
+            echo ""
+
+            local missing_deps=()
+
+            # Check for NetworkManager
+            if command -v nmcli &> /dev/null; then
+                echo -e "${GREEN}✓${NC} NetworkManager"
+            else
+                echo -e "${RED}✗${NC} NetworkManager (FEHLT)"
+                missing_deps+=("network-manager")
+            fi
+
+            # Check for GUI tools
+            if command -v zenity &> /dev/null; then
+                echo -e "${GREEN}✓${NC} Zenity (GUI)"
+            elif command -v kdialog &> /dev/null; then
+                echo -e "${GREEN}✓${NC} KDialog (GUI)"
+            else
+                echo -e "${RED}✗${NC} zenity oder kdialog (FEHLT)"
+                missing_deps+=("zenity")
+            fi
+
+            echo ""
+
+            # Ask if daemon should be installed
+            echo "Soll der Smart WiFi Controller Daemon installiert werden?"
+            echo "(Der Daemon überwacht Ethernet/WiFi kontinuierlich im Hintergrund)"
+            echo ""
+            read -p "Dienst installieren? (j/n) [Standard: j]: " daemon_choice
+            daemon_choice=${daemon_choice:-j}
+
+            if [[ "$daemon_choice" =~ ^[Jj] ]]; then
+                INSTALL_DAEMON=true
+                echo "✓ Dienst wird installiert"
+            else
+                INSTALL_DAEMON=false
+                echo "✓ Dienst wird nicht installiert"
+            fi
+            echo ""
+
+            # Ask for log location
+            read -p "Log-Verzeichnis [Standard: $DEFAULT_LOG_DIR]: " log_dir
+            log_dir=${log_dir:-$DEFAULT_LOG_DIR}
+            echo "✓ Log-Verzeichnis: $log_dir"
+            ;;
+        D)
+            echo -e "${RED}VORSICHT: Smart WiFi Controller ist nicht installiert!${NC}"
+            exit 1
+            ;;
+        *)
+            echo -e "${RED}Ungültige Option${NC}"
+            exit 1
+            ;;
+    esac
+fi
+
+echo ""
+
+# Handle uninstall
+if [ "$INSTALL_TYPE" = "uninstall" ]; then
+    echo "Deinstalliere Smart WiFi Controller..."
     echo ""
 
-    # Ask for log location
-    read -p "Log-Verzeichnis [Standard: $DEFAULT_LOG_DIR]: " log_dir
-    log_dir=${log_dir:-$DEFAULT_LOG_DIR}
-    echo "✓ Log-Verzeichnis: $log_dir"
+    # Stop daemon if running
+    if systemctl --user is-active --quiet smart-wifi-controller 2>/dev/null; then
+        systemctl --user stop smart-wifi-controller
+        echo -e "${GREEN}✓${NC} Daemon gestoppt"
+    fi
+
+    # Disable daemon
+    if systemctl --user is-enabled --quiet smart-wifi-controller 2>/dev/null; then
+        systemctl --user disable smart-wifi-controller 2>/dev/null
+        echo -e "${GREEN}✓${NC} Daemon deaktiviert"
+    fi
+
+    # Remove service file
+    if [ -f "$HOME/.config/systemd/user/smart-wifi-controller.service" ]; then
+        rm -f "$HOME/.config/systemd/user/smart-wifi-controller.service"
+        systemctl --user daemon-reload
+        echo -e "${GREEN}✓${NC} Service-Datei entfernt"
+    fi
+
+    # Remove installed files
+    rm -f "$INSTALL_DIR/$INSTALLED_NAME"
+    rm -f "$INSTALL_DIR/smart_wifi_core.sh"
+    rm -f "$INSTALL_DIR/smart_wifi_gui_prompts.sh"
+    rm -f "$INSTALL_DIR/smart_wifi_conditions.sh"
+    rm -f "$INSTALL_DIR/smart_wifi_daemon"
+    rm -f "$INSTALL_DIR/smart_wifi_rules.conf"
+    echo -e "${GREEN}✓${NC} Programmdateien entfernt"
+
+    # Remove desktop entry
+    rm -f "$DESKTOP_DIR/smart-wifi-controller.desktop"
+    echo -e "${GREEN}✓${NC} Desktop-Entry entfernt"
+
     echo ""
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║      Deinstallation erfolgreich abgeschlossen! ✓           ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 0
+fi
+
+# Skip file copy if only verifying
+if [ "$INSTALL_TYPE" = "verify" ]; then
+    echo "Verifiziere Installation..."
+    echo ""
+
+    local errors=0
+
+    # Check files
+    for file in smart_wifi_controller.sh smart_wifi_core.sh smart_wifi_gui_prompts.sh; do
+        if [ -f "$INSTALL_DIR/$file" ] || [ -f "$INSTALL_DIR/${file%.sh}" ]; then
+            echo -e "${GREEN}✓${NC} $file vorhanden"
+        else
+            echo -e "${RED}✗${NC} $file FEHLT"
+            ((errors++))
+        fi
+    done
+
+    # Check command
+    if command -v "$INSTALLED_NAME" &> /dev/null; then
+        echo -e "${GREEN}✓${NC} Befehl verfügbar"
+    else
+        echo -e "${RED}✗${NC} Befehl NICHT verfügbar"
+        ((errors++))
+    fi
+
+    echo ""
+    if [ $errors -eq 0 ]; then
+        echo -e "${GREEN}✓ Installation ist OK${NC}"
+        exit 0
+    else
+        echo -e "${RED}✗ Installation hat Probleme${NC}"
+        exit 1
+    fi
 fi
 
 # Create directories if they don't exist
@@ -276,8 +459,8 @@ fi
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
 if [ "$INSTALL_TYPE" = "update" ]; then
-    echo "║        Update erfolgreich abgeschlossen! ✓               ║"
-else
+    echo "║         Update erfolgreich abgeschlossen! ✓              ║"
+elif [ "$INSTALL_TYPE" = "install" ]; then
     echo "║     Installation erfolgreich abgeschlossen! ✓              ║"
 fi
 echo "╚════════════════════════════════════════════════════════════╝"
@@ -320,7 +503,7 @@ if [ "$INSTALL_TYPE" != "update" ] && [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; t
     echo ""
 fi
 
-if [ "$INSTALL_DAEMON" = true ] && [ "$INSTALL_TYPE" != "update" ]; then
+if [ "$INSTALL_DAEMON" = true ] && [ "$INSTALL_TYPE" = "install" ]; then
     echo -e "${GREEN}Daemon-Setup:${NC}"
     echo "  Um den Daemon beim Hochfahren automatisch zu starten:"
     echo "    systemctl --user enable smart-wifi-controller"
@@ -331,3 +514,9 @@ if [ "$INSTALL_DAEMON" = true ] && [ "$INSTALL_TYPE" != "update" ]; then
 fi
 
 echo "Das Script kann auch über das Anwendungsmenü gefunden werden (Smart WiFi Controller)."
+echo ""
+echo -e "${BLUE}═══ WEITERE BEFEHLE ═══${NC}"
+echo "  smart-wifi-controller               # GUI starten"
+echo "  smart-wifi-controller --status      # Status anzeigen"
+echo "  systemctl --user status smart-wifi-controller  # Daemon Status"
+echo "  sudo ./install.sh                   # Update/Verwalten"
