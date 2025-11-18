@@ -228,6 +228,27 @@ if [ "$INSTALL_TYPE" = "service_install" ]; then
             echo -e "${GREEN}✓${NC} Dienst erfolgreich gestartet"
         else
             echo -e "${YELLOW}⚠${NC} Dienst konnte nicht gestartet werden"
+            echo ""
+            echo "Status-Informationen:"
+            systemctl status smart-wifi-controller
+            echo ""
+            read -p "Erneut versuchen? (j/n): " retry_choice
+
+            if [[ "$retry_choice" =~ ^[Jj] ]]; then
+                echo "Starte Dienst erneut..."
+                systemctl restart smart-wifi-controller
+
+                if systemctl is-active --quiet smart-wifi-controller; then
+                    echo -e "${GREEN}✓${NC} Dienst erfolgreich gestartet"
+                else
+                    echo -e "${RED}✗${NC} Dienst konnte immer noch nicht gestartet werden"
+                    echo "Bitte überprüfen Sie die Logs mit: journalctl -u smart-wifi-controller -n 50"
+                fi
+            else
+                echo "Service-Datei wurde installiert, aber nicht gestartet."
+                echo "Sie können den Dienst später manuell starten mit:"
+                echo "  systemctl start smart-wifi-controller"
+            fi
         fi
 
         # Ask to enable at startup
